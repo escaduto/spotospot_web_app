@@ -26,7 +26,7 @@ export default function DashboardHome() {
       });
   }, [user]);
 
-  const drafts = trips.filter((t) => t.status === "draft");
+  const drafts = trips.filter((t) => t.status === "planning");
   const active = trips.filter((t) => t.status === "active");
   const completed = trips.filter((t) => t.status === "completed");
 
@@ -155,9 +155,14 @@ export default function DashboardHome() {
                   className="group overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm hover:shadow-lg transition-all"
                 >
                   <div className="relative h-32 bg-gradient-to-br from-teal-50 to-cyan-50">
-                    {trip.cover_image_url ? (
+                    {trip.image_url ? (
                       <Image
-                        src={trip.cover_image_url}
+                        src={trip.image_url}
+                        blurDataURL={
+                          trip.image_blurhash
+                            ? `data:image/jpeg;base64,${trip.image_blurhash}`
+                            : undefined
+                        }
                         alt={trip.title}
                         fill
                         className="object-cover"
@@ -173,9 +178,9 @@ export default function DashboardHome() {
                       className={`absolute top-3 right-3 rounded-full px-2.5 py-0.5 text-xs font-medium ${
                         trip.status === "active"
                           ? "bg-green-100 text-green-700"
-                          : trip.status === "draft"
-                          ? "bg-amber-100 text-amber-700"
-                          : "bg-blue-100 text-blue-700"
+                          : trip.status === "planning"
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-blue-100 text-blue-700"
                       }`}
                     >
                       {trip.status}
@@ -185,9 +190,9 @@ export default function DashboardHome() {
                     <h3 className="font-semibold text-gray-900 group-hover:text-teal-600 transition">
                       {trip.title}
                     </h3>
-                    {trip.location && (
+                    {trip.destination && (
                       <p className="mt-1 text-xs text-gray-400">
-                        📍 {trip.location}
+                        📍 {trip.destination}
                       </p>
                     )}
                     {trip.start_date && (
@@ -200,7 +205,7 @@ export default function DashboardHome() {
                         {trip.end_date &&
                           ` – ${new Date(trip.end_date).toLocaleDateString(
                             "en-US",
-                            { month: "short", day: "numeric" }
+                            { month: "short", day: "numeric" },
                           )}`}
                       </p>
                     )}

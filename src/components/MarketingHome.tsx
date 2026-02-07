@@ -14,9 +14,14 @@ function TripCard({ trip }: { trip: Trip }) {
     <div className="group relative overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm hover:shadow-xl transition-all duration-300">
       {/* Cover image placeholder */}
       <div className="relative h-44 overflow-hidden bg-gradient-to-br from-teal-100 to-cyan-50">
-        {trip.cover_image_url ? (
+        {trip.image_url ? (
           <Image
-            src={trip.cover_image_url}
+            src={trip.image_url}
+            blurDataURL={
+              trip.image_blurhash
+                ? `data:image/jpeg;base64,${trip.image_blurhash}`
+                : undefined
+            }
             alt={trip.title}
             fill
             sizes="(max-width: 768px) 100vw, 400px"
@@ -28,9 +33,9 @@ function TripCard({ trip }: { trip: Trip }) {
             🗺️
           </div>
         )}
-        {trip.location && (
+        {trip.destination && (
           <span className="absolute bottom-3 left-3 rounded-full bg-white/90 backdrop-blur-sm px-3 py-1 text-xs font-medium text-gray-700 shadow-sm">
-            📍 {trip.location}
+            📍 {trip.destination}
           </span>
         )}
       </div>
