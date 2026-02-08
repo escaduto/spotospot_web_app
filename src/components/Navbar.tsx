@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useAuth } from "@/src/hooks/useAuth";
 import AuthModal from "./AuthModal";
+import Link from "next/link";
 
 export default function Navbar() {
   const { user, profile, loading, signOut } = useAuth();
@@ -14,12 +15,12 @@ export default function Navbar() {
       <header className="fixed inset-x-0 top-0 z-50 bg-white/80 backdrop-blur-lg border-b border-gray-100">
         <nav className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           {/* Logo */}
-          <a href="/" className="flex items-center gap-2">
+          <Link href="/" className="flex items-center gap-2">
             <span className="text-2xl">📍</span>
-            <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-teal-600 to-cyan-500 bg-clip-text text-transparent">
+            <span className="text-xl font-bold tracking-tight bg-linear-to-r from-teal-600 to-cyan-500 bg-clip-text text-transparent">
               SpotoSpot
             </span>
-          </a>
+          </Link>
 
           {/* Desktop nav links */}
           <div className="hidden items-center gap-8 md:flex">
@@ -35,12 +36,12 @@ export default function Navbar() {
             >
               How It Works
             </a>
-            <a
-              href="#discover"
+            <Link
+              href="/discover"
               className="text-sm font-medium text-gray-600 hover:text-gray-900 transition"
             >
               Discover
-            </a>
+            </Link>
             <a
               href="#mobile"
               className="text-sm font-medium text-gray-600 hover:text-gray-900 transition"
@@ -59,7 +60,7 @@ export default function Navbar() {
                   onClick={() => setMenuOpen(!menuOpen)}
                   className="flex items-center gap-2 rounded-full bg-gray-100 py-1.5 pl-2 pr-3 text-sm font-medium text-gray-700 hover:bg-gray-200 transition"
                 >
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-teal-400 to-cyan-500 text-xs font-bold text-white">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-linear-to-br from-teal-400 to-cyan-500 text-xs font-bold text-white">
                     {(
                       profile?.full_name?.[0] ||
                       user.email?.[0] ||
@@ -107,7 +108,7 @@ export default function Navbar() {
                 </button>
                 <button
                   onClick={() => setAuthOpen(true)}
-                  className="rounded-full bg-gradient-to-r from-teal-500 to-cyan-500 px-5 py-2 text-sm font-semibold text-white shadow-md hover:shadow-lg hover:brightness-110 transition"
+                  className="rounded-full bg-linear-to-r from-teal-500 to-cyan-500 px-5 py-2 text-sm font-semibold text-white shadow-md hover:shadow-lg hover:brightness-110 transition"
                 >
                   Get Started
                 </button>

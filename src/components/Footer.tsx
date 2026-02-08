@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function Footer() {
   return (
     <footer className="border-t border-gray-100 bg-white">
@@ -5,12 +7,12 @@ export default function Footer() {
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
           {/* Brand */}
           <div>
-            <a href="/" className="flex items-center gap-2">
+            <Link href="/" className="flex items-center gap-2">
               <span className="text-2xl">📍</span>
-              <span className="text-lg font-bold bg-gradient-to-r from-teal-600 to-cyan-500 bg-clip-text text-transparent">
+              <span className="text-lg font-bold bg-linear-to-r from-teal-600 to-cyan-500 bg-clip-text text-transparent">
                 SpotoSpot
               </span>
-            </a>
+            </Link>
             <p className="mt-3 text-sm text-gray-500 leading-relaxed">
               Plan your perfect trip, spot by spot. Discover, collaborate, and
               explore the world with friends.
