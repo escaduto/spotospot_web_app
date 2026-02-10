@@ -248,3 +248,61 @@ export interface PlacesDetails {
   created_at: string;
   updated_at: string;
 }
+
+export interface SeedItineraryDays {
+  id: string;
+
+  // basic info
+  title: string;
+  city: string | null;
+  country: string | null;
+  description: string | null;
+  rep_point: { lat: number; lng: number } | null;
+
+  // images
+  image_url: string | null;
+  image_blurhash: string | null;
+  image_properties: Record<string, string> | null; // e.g. { photographer: "John Doe", photographer_url: "", alt_text: "" }
+
+  // categorzation
+  category_type: string | null; // e.g. "sightseeing", "food_and_drink", "outdoors"
+  destination_key: string | null; // e.g. "paris", "new_york", "tokyo"
+  notes: string | null;
+
+  approval_status: "approved" | "pending" | "rejected";
+  approved_by: string | null; // user_id of approver
+  approved_at: string | null;
+  metadata: Record<string, string | number> | null; // e.g. { "mood": "relaxing", "energy_level": "high" }
+
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SeedItineraryItems {
+  id: string;
+  seed_itinerary_day_id: string;
+
+  title: string;
+  item_type: string;
+  description: string | null;
+
+  location_name: string | null;
+  location_address: string | null;
+  coords: { lat: number; lng: number } | null;
+  place_id: string | null; // e.g. Google Place ID, Foursquare Venue ID
+
+  order_index: number;
+  start_time: string | null;
+  end_time: string | null;
+  duration_minutes: number | null;
+
+  cost_estimate: number | null;
+  currency: string | null; // ISO 4217 code (e.g. "USD")
+
+  transportation_type: string | null; // e.g. "flight", "train", "car_rental"
+
+  notes: string | null;
+
+  is_confirmed: boolean;
+}

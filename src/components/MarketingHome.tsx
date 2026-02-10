@@ -13,7 +13,7 @@ function TripCard({ trip }: { trip: Trip }) {
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm hover:shadow-xl transition-all duration-300">
       {/* Cover image placeholder */}
-      <div className="relative h-44 overflow-hidden bg-gradient-to-br from-teal-100 to-cyan-50">
+      <div className="relative h-44 overflow-hidden bg-linear-to-br from-teal-100 to-cyan-50">
         {trip.image_url ? (
           <Image
             src={trip.image_url}

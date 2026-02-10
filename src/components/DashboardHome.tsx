@@ -44,7 +44,7 @@ export default function DashboardHome() {
         <div className="mb-10">
           <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">
             {greeting()},{" "}
-            <span className="bg-gradient-to-r from-teal-600 to-cyan-500 bg-clip-text text-transparent">
+            <span className="bg-linear-to-r from-teal-600 to-cyan-500 bg-clip-text text-transparent">
               {profile?.full_name || user?.email?.split("@")[0] || "Traveler"}
             </span>{" "}
             ✈️
@@ -78,7 +78,7 @@ export default function DashboardHome() {
           ].map((s) => (
             <div
               key={s.label}
-              className={`rounded-2xl border bg-gradient-to-br ${s.color} p-5`}
+              className={`rounded-2xl border bg-linear-to-br ${s.color} p-5`}
             >
               <div className="flex items-center justify-between">
                 <span className="text-2xl">{s.icon}</span>
@@ -97,7 +97,7 @@ export default function DashboardHome() {
         <div className="mb-10 flex flex-wrap gap-3">
           <a
             href="/trips/new"
-            className="flex items-center gap-2 rounded-full bg-gradient-to-r from-teal-500 to-cyan-500 px-6 py-2.5 text-sm font-semibold text-white shadow-md hover:shadow-lg hover:brightness-110 transition"
+            className="flex items-center gap-2 rounded-full bg-linear-to-r from-teal-500 to-cyan-500 px-6 py-2.5 text-sm font-semibold text-white shadow-md hover:shadow-lg hover:brightness-110 transition"
           >
             ✨ Create New Trip
           </a>
@@ -141,7 +141,7 @@ export default function DashboardHome() {
               </p>
               <a
                 href="/trips/new"
-                className="mt-6 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-teal-500 to-cyan-500 px-6 py-2.5 text-sm font-semibold text-white shadow-md hover:shadow-lg transition"
+                className="mt-6 inline-flex items-center gap-2 rounded-full bg-linear-to-r from-teal-500 to-cyan-500 px-6 py-2.5 text-sm font-semibold text-white shadow-md hover:shadow-lg transition"
               >
                 ✨ Create Your First Trip
               </a>
@@ -154,9 +154,11 @@ export default function DashboardHome() {
                   href={`/trips/${trip.id}`}
                   className="group overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm hover:shadow-lg transition-all"
                 >
-                  <div className="relative h-32 bg-gradient-to-br from-teal-50 to-cyan-50">
+                  <div className="relative h-32 bg-linear-to-br from-teal-50 to-cyan-50">
                     {trip.image_url ? (
                       <Image
+                        width={768}
+                        height={384}
                         src={trip.image_url}
                         blurDataURL={
                           trip.image_blurhash
