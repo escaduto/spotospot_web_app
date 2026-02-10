@@ -29,3 +29,14 @@ export function parsePoint(
 
   return null;
 }
+
+/**
+ * Converts { lat, lng } back to GeoJSON Point for PostGIS writes.
+ * Returns null if input is null/undefined.
+ */
+export function toGeoPoint(
+  coords: { lat: number; lng: number } | null | undefined,
+): { type: "Point"; coordinates: [number, number] } | null {
+  if (!coords) return null;
+  return { type: "Point", coordinates: [coords.lng, coords.lat] };
+}

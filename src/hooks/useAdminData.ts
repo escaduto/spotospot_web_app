@@ -8,6 +8,7 @@ import type {
   SeedItineraryItems,
 } from "@/src/supabase/types";
 import type { Filters } from "@/src/app/admin/page";
+import { toGeoPoint } from "@/src/utils/geo";
 
 export interface AdminStats {
   total: number;
@@ -81,8 +82,10 @@ export function useAdminData(filters: Filters) {
     return { cities, countries };
   }, [allDays]);
 
+  // Always retrieve all plans from itinerary_days, filter only for display
   const days = useMemo(() => {
     return allDays.filter((d) => {
+      // Only filter by status if not 'all'
       if (filters.status !== "all" && d.approval_status !== filters.status)
         return false;
       if (filters.city && d.city !== filters.city) return false;
@@ -103,50 +106,101 @@ export function useAdminData(filters: Filters) {
     return allItems.filter((i) => dayIds.has(i.seed_itinerary_day_id));
   }, [allItems, days]);
 
+  /** Convert any { lat, lng } point fields to GeoJSON before sending to DB */
+  const prepareDayPayload = (updates: Partial<SeedItineraryDays>) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const payload: Record<string, any> = { ...updates };
+    if ("rep_point" in payload) {
+      payload.rep_point = toGeoPoint(payload.rep_point);
+    }
+    return payload;
+  };
+
+  const prepareItemPayload = (updates: Partial<SeedItineraryItems>) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const payload: Record<string, any> = { ...updates };
+    if ("coords" in payload) {
+      payload.coords = toGeoPoint(payload.coords);
+    }
+    return payload;
+  };
+
   const approveDay = async (dayId: string) => {
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    await supabase
+    const { error } = await supabase
       .from("seed_itinerary_days")
       .update({
         approval_status: "approved",
-        approved_by: user?.id,
+        approved_by: user?.id ?? null,
         approved_at: new Date().toISOString(),
       })
       .eq("id", dayId);
+    if (error) {
+      console.error("approveDay error:", error);
+      throw error;
+    }
   };
 
   const rejectDay = async (dayId: string) => {
-    await supabase
+    const { error } = await supabase
       .from("seed_itinerary_days")
       .update({ approval_status: "rejected" })
       .eq("id", dayId);
+    if (error) {
+      console.error("rejectDay error:", error);
+      throw error;
+    }
   };
 
   const updateDay = async (
     dayId: string,
     updates: Partial<SeedItineraryDays>,
   ) => {
-    await supabase.from("seed_itinerary_days").update(updates).eq("id", dayId);
+    const { error } = await supabase
+      .from("seed_itinerary_days")
+      .update(prepareDayPayload(updates))
+      .eq("id", dayId);
+    if (error) {
+      console.error("updateDay error:", error);
+      throw error;
+    }
   };
 
   const updateItem = async (
     itemId: string,
     updates: Partial<SeedItineraryItems>,
   ) => {
-    await supabase
+    const { error } = await supabase
       .from("seed_itinerary_items")
-      .update(updates)
+      .update(prepareItemPayload(updates))
       .eq("id", itemId);
+    if (error) {
+      console.error("updateItem error:", error);
+      throw error;
+    }
   };
 
   const addItem = async (item: Omit<SeedItineraryItems, "id">) => {
-    await supabase.from("seed_itinerary_items").insert(item);
+    const { error } = await supabase
+      .from("seed_itinerary_items")
+      .insert(prepareItemPayload(item));
+    if (error) {
+      console.error("addItem error:", error);
+      throw error;
+    }
   };
 
   const deleteItem = async (itemId: string) => {
-    await supabase.from("seed_itinerary_items").delete().eq("id", itemId);
+    const { error } = await supabase
+      .from("seed_itinerary_items")
+      .delete()
+      .eq("id", itemId);
+    if (error) {
+      console.error("deleteItem error:", error);
+      throw error;
+    }
   };
 
   return {

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { SeedItineraryItems } from "@/src/supabase/types";
+import { toGeoPoint } from "@/src/utils/geo";
 
 interface Props {
   item?: SeedItineraryItems;
@@ -47,10 +48,11 @@ export default function ItemEditor({
     setBusy(true);
     const coords =
       form.lat && form.lng
-        ? { lat: parseFloat(form.lat), lng: parseFloat(form.lng) }
+        ? toGeoPoint({ lat: parseFloat(form.lat), lng: parseFloat(form.lng) })
         : null;
 
-    const payload: Partial<SeedItineraryItems> = {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const payload: Record<string, any> = {
       seed_itinerary_day_id: dayId,
       title: form.title,
       item_type: form.item_type,
@@ -72,7 +74,6 @@ export default function ItemEditor({
         typeof form.order_index === "string"
           ? parseInt(form.order_index as string, 10)
           : form.order_index,
-      is_confirmed: item?.is_confirmed ?? false,
     };
 
     await onSave(payload);

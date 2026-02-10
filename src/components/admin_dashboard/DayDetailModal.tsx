@@ -39,6 +39,7 @@ export default function DayDetailModal({
   refetch,
 }: Props) {
   const [editingDay, setEditingDay] = useState(false);
+  const isApproved = day.approval_status === "approved";
   const [dayForm, setDayForm] = useState({
     title: day.title ?? "",
     city: day.city ?? "",
@@ -70,11 +71,12 @@ export default function DayDetailModal({
   const handlePhotoSelect = async (
     url: string,
     properties: Record<string, string>,
+    blur_hash: string | null | undefined,
   ) => {
     await onUpdateDay({
       image_url: url,
       image_properties: properties,
-      image_blurhash: null,
+      image_blurhash: blur_hash ?? null,
     });
     setShowPhotoSearch(false);
     refetch();
@@ -109,7 +111,7 @@ export default function DayDetailModal({
           </button>
           <button
             onClick={() => setShowPhotoSearch(true)}
-            className="absolute bottom-3 right-3 bg-white/90 text-sm px-3 py-1.5 rounded-lg font-medium hover:bg-white"
+            className={`absolute bottom-3 right-3 bg-white/90 text-sm px-3 py-1.5 rounded-lg font-medium hover:bg-white ${isApproved ? "opacity-40 pointer-events-none" : ""}`}
           >
             📷 Change Photo
           </button>
@@ -122,6 +124,11 @@ export default function DayDetailModal({
         </div>
 
         <div className="p-6 space-y-6">
+          {isApproved && (
+            <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-2 rounded-lg text-sm font-medium">
+              ✓ This itinerary day is approved. Editing is disabled.
+            </div>
+          )}
           {/* Day metadata edit */}
           {editingDay ? (
             <div className="space-y-3">
@@ -223,7 +230,7 @@ export default function DayDetailModal({
               </div>
               <button
                 onClick={() => setEditingDay(true)}
-                className="text-sm text-blue-600 underline"
+                className={`text-sm text-blue-600 underline ${isApproved ? "opacity-40 pointer-events-none" : ""}`}
               >
                 Edit Details
               </button>
@@ -238,7 +245,7 @@ export default function DayDetailModal({
               </h3>
               <button
                 onClick={() => setAddingItem(true)}
-                className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg font-medium"
+                className={`text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg font-medium ${isApproved ? "opacity-40 pointer-events-none" : ""}`}
               >
                 + Add Activity
               </button>
@@ -304,7 +311,7 @@ export default function DayDetailModal({
                       </div>
                       <button
                         onClick={() => setEditingItemId(item.id)}
-                        className="opacity-0 group-hover:opacity-100 transition text-xs text-blue-600 underline shrink-0"
+                        className={`opacity-0 group-hover:opacity-100 transition text-xs text-blue-600 underline shrink-0 ${isApproved ? "hidden" : ""}`}
                       >
                         Edit
                       </button>
@@ -358,7 +365,11 @@ export default function DayDetailModal({
                 await onReject();
                 setBusy(false);
               }}
-              disabled={busy || day.approval_status === "rejected"}
+              disabled={
+                busy ||
+                day.approval_status === "approved" ||
+                day.approval_status === "rejected"
+              }
               className="flex-1 bg-red-600 text-white py-2.5 rounded-xl font-semibold text-sm disabled:opacity-40"
             >
               ✗ Reject

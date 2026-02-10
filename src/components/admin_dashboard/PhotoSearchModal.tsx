@@ -7,6 +7,7 @@ import Image from "next/image";
 // Standard Unsplash API format
 interface UnsplashPhotoStandard {
   id: string;
+  blur_hash: string | null;
   urls: {
     raw: string;
     full: string;
@@ -31,6 +32,7 @@ interface UnsplashPhotoCustom {
   alt: string | null;
   photographer: string;
   photographerURL?: string;
+  blur_hash?: string | null;
 }
 
 // Normalized format used in the component
@@ -41,11 +43,16 @@ interface NormalizedPhoto {
   alt: string | null;
   photographer: string;
   photographerUrl: string;
+  blur_hash: string | null;
 }
 
 interface Props {
   query: string;
-  onSelect: (url: string, properties: Record<string, string>) => void;
+  onSelect: (
+    url: string,
+    properties: Record<string, string>,
+    blur_hash: string | null,
+  ) => void;
   onClose: () => void;
 }
 
@@ -76,6 +83,7 @@ export default function PhotoSearchModal({
         alt: p.alt,
         photographer: p.photographer,
         photographerUrl: p.photographerURL || "",
+        blur_hash: p.blur_hash ?? null,
       }));
     }
 
@@ -88,6 +96,7 @@ export default function PhotoSearchModal({
         alt: p.alt_description,
         photographer: p.user.name,
         photographerUrl: p.user.links.html,
+        blur_hash: p.blur_hash ?? null,
       }));
     }
 
@@ -105,6 +114,7 @@ export default function PhotoSearchModal({
               alt: custom.alt,
               photographer: custom.photographer,
               photographerUrl: custom.photographerURL || "",
+              blur_hash: custom.blur_hash ?? null,
             };
           }
           // Standard format
@@ -116,6 +126,7 @@ export default function PhotoSearchModal({
             alt: std.alt_description,
             photographer: std.user.name,
             photographerUrl: std.user.links.html,
+            blur_hash: std.blur_hash ?? null,
           };
         },
       );
@@ -169,13 +180,17 @@ export default function PhotoSearchModal({
   const handleSelect = () => {
     const photo = photos.find((p) => p.id === selectedId);
     if (!photo) return;
-    onSelect(photo.imageUrl, {
-      photographer: photo.photographer,
-      photographer_url: photo.photographerUrl,
-      alt_text: photo.alt ?? "",
-      unsplash_id: photo.id,
-      source: "unsplash",
-    });
+    onSelect(
+      photo.imageUrl,
+      {
+        photographer: photo.photographer,
+        photographer_url: photo.photographerUrl,
+        alt_text: photo.alt ?? "",
+        unsplash_id: photo.id,
+        source: "unsplash",
+      },
+      photo.blur_hash ?? null,
+    );
   };
 
   return (

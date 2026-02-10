@@ -118,6 +118,16 @@ export interface ItineraryDay {
   updated_at: string;
 }
 
+type TransportationType =
+  | "walking"
+  | "driving"
+  | "cycling"
+  | "flight"
+  | "ferry"
+  | "train"
+  | "bus"
+  | "other";
+
 export interface ItineraryItem {
   id: string;
   itinerary_day_id: string;
@@ -136,8 +146,7 @@ export interface ItineraryItem {
   booking_confirmation: string | null;
   notes: string | null;
   order_index: number;
-  is_confirmed: boolean;
-  transportation_type: string | null; // e.g. "flight", "train", "car_rental"
+  transportation_type: TransportationType | null; // e.g. "flight", "train", "car_rental"
   route_to_next_geometry: Record<string, string | number> | null; // e.g. GeoJSON LineString for route to next item
   route_to_next_distance_m: number | null; // in meters
   route_to_next_duration_s: number | null; // in seconds
@@ -303,6 +312,4 @@ export interface SeedItineraryItems {
   transportation_type: string | null; // e.g. "flight", "train", "car_rental"
 
   notes: string | null;
-
-  is_confirmed: boolean;
 }
