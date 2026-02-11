@@ -34,7 +34,6 @@ export interface PlacePointResult {
   is_top_destination: boolean | null;
   metadata: Record<string, string | number> | null;
 }
-
 // -------------------------------------------------
 // Zoom → query-parameter helpers
 // -------------------------------------------------
@@ -135,7 +134,9 @@ export async function searchPlaces(
       .slice(0, maxResults)
       .map((item) => item.place);
 
-    return filtered.length > 0 ? filtered : placesWithDistance.slice(0, 20).map((item) => item.place);
+    return filtered.length > 0
+      ? filtered
+      : placesWithDistance.slice(0, 20).map((item) => item.place);
   }
 
   return places.slice(0, 20);
@@ -144,7 +145,12 @@ export async function searchPlaces(
 /**
  * Calculate distance between two points using Haversine formula (in km)
  */
-function getDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+function getDistance(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+): number {
   const R = 6371; // Earth's radius in km
   const dLat = toRad(lat2 - lat1);
   const dLng = toRad(lng2 - lng1);
@@ -198,30 +204,36 @@ export function placesToGeoJSON(
 ): GeoJSON.FeatureCollection<GeoJSON.Point> {
   return {
     type: "FeatureCollection",
-    features: places.map((p) => ({
-      type: "Feature" as const,
-      id: p.id,
-      geometry: {
-        type: "Point" as const,
-        coordinates: [p.lng, p.lat],
-      },
-      properties: {
-        id: p.id,
-        name: p.name_en || p.name_default,
-        name_default: p.name_default,
-        category: p.category,
-        category_group: p.category_group || "other",
-        address: p.address,
-        city: p.city,
-        region: p.region,
-        country: p.country,
-        popularity_score: p.popularity_score ?? 0,
-        is_top_destination: p.is_top_destination ?? false,
-        website_url: p.website_url,
-        phone_number: p.phone_number,
-        // symbol-sort-key: lower = rendered on top
-        sort_key: 100 - (p.popularity_score ?? 0),
-      },
-    })),
+    features: places
+      .map((p) => {
+        const coords = { lat: p.lat, lng: p.lng };
+        if (!coords) return null;
+        return {
+          type: "Feature" as const,
+          id: p.id,
+          geometry: {
+            type: "Point" as const,
+            coordinates: [coords.lng, coords.lat] as [number, number],
+          },
+          properties: {
+            id: p.id,
+            name: p.name_en || p.name_default,
+            name_default: p.name_default,
+            category: p.category,
+            category_group: p.category_group || "other",
+            address: p.address,
+            city: p.city,
+            region: p.region,
+            country: p.country,
+            popularity_score: p.popularity_score ?? 0,
+            is_top_destination: p.is_top_destination ?? false,
+            website_url: p.website_url,
+            phone_number: p.phone_number,
+            // symbol-sort-key: lower = rendered on top
+            sort_key: 100 - (p.popularity_score ?? 0),
+          },
+        };
+      })
+      .filter((f): f is NonNullable<typeof f> => f !== null),
   };
 }

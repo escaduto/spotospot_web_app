@@ -1,29 +1,61 @@
 "use client";
 
+import { useRef } from "react";
 import type { SeedItineraryItems } from "@/src/supabase/types";
 import { parsePoint } from "@/src/utils/geo";
 
 interface Props {
   item: SeedItineraryItems;
+  index: number;
   isSelected: boolean;
   onSelect: () => void;
   onEdit: () => void;
   disabled: boolean;
+  onDragStart: (index: number) => void;
+  onDragOver: (index: number) => void;
+  onDragEnd: () => void;
+  isDragOver: boolean;
+  isDragging: boolean;
 }
 
 export default function ActivityItem({
   item,
+  index,
   isSelected,
   onSelect,
   onEdit,
   disabled,
+  onDragStart,
+  onDragOver,
+  onDragEnd,
+  isDragOver,
+  isDragging,
 }: Props) {
   const coords = parsePoint(item.coords);
+  const dragHandleRef = useRef<HTMLSpanElement>(null);
 
   return (
     <div
+      draggable={!disabled}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", String(index));
+        onDragStart(index);
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        onDragOver(index);
+      }}
+      onDragEnd={onDragEnd}
       onClick={onSelect}
       className={`p-3 rounded-lg group cursor-pointer transition-all ${
+        isDragging
+          ? "opacity-40"
+          : isDragOver
+            ? "border-t-2 border-t-blue-500"
+            : ""
+      } ${
         isSelected
           ? "bg-blue-50 border-2 border-blue-500"
           : "bg-gray-50 border-2 border-transparent hover:border-gray-300"
@@ -31,13 +63,16 @@ export default function ActivityItem({
     >
       <div className="flex items-start gap-3">
         <span
+          ref={dragHandleRef}
           className={`shrink-0 w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center ${
+            !disabled ? "cursor-grab active:cursor-grabbing" : ""
+          } ${
             isSelected
               ? "bg-blue-600 text-white"
               : "bg-blue-100 text-blue-700"
           }`}
         >
-          {item.order_index + 1}
+          {item.order_index}
         </span>
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">

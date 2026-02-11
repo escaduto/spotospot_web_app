@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import type { SeedItineraryItems } from "@/src/supabase/types";
+import { PlacePointResult } from "@/src/supabase/places";
 import { usePlacesSearch } from "@/src/hooks/usePlacesSearch";
 import { getCategoryConfig } from "@/src/map/scripts/category-config";
 
@@ -12,6 +13,10 @@ interface Props {
   onSave: (updates: Partial<SeedItineraryItems>) => Promise<void>;
   onCancel: () => void;
   onDelete?: () => Promise<void>;
+  mapCenter?: { lng: number; lat: number };
+  onSearchResultsChange?: (places: PlacePointResult[]) => void;
+  mapSelectedPOI?: PlacePointResult | null;
+  onMapPOIConsumed?: () => void;
 }
 
 export default function ActivityEditor({
@@ -21,6 +26,10 @@ export default function ActivityEditor({
   onSave,
   onCancel,
   onDelete,
+  mapCenter,
+  onSearchResultsChange,
+  mapSelectedPOI,
+  onMapPOIConsumed,
 }: Props) {
   const isNew = !item;
   const [form, setForm] = useState({
@@ -33,34 +42,71 @@ export default function ActivityEditor({
     place_id: item?.place_id ?? null,
   });
 
+  // Track whether coords were explicitly set via POI selection
+  const [coordsManuallySet, setCoordsManuallySet] = useState(false);
+
   const [showPOISearch, setShowPOISearch] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // POI search with current map center (could be enhanced with actual center)
-  const { query, results, loading, isOpen, handleQueryChange, clear, close } =
-    usePlacesSearch();
+  // Sync form coords when item prop changes (e.g. after drag-to-update)
+  useEffect(() => {
+    if (item?.coords != null && !coordsManuallySet) {
+      setForm((f) => ({ ...f, coords: item.coords ?? null }));
+    }
+  }, [item?.coords, coordsManuallySet]);
+
+  // POI search with current map center for distance-based sorting
+  const { query, results, isOpen, handleQueryChange, clear } =
+    usePlacesSearch(mapCenter);
+
+  // Report search results to parent (for map display)
+  useEffect(() => {
+    onSearchResultsChange?.(results);
+  }, [results, onSearchResultsChange]);
+
+  // Handle POI selected from map click
+  useEffect(() => {
+    if (mapSelectedPOI) {
+      handleSelectPOIInternal(mapSelectedPOI);
+      onMapPOIConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapSelectedPOI]);
 
   const handleSubmit = async () => {
     setSaving(true);
-    const updates: Partial<SeedItineraryItems> = {
-      ...form,
-      seed_itinerary_day_id: dayId,
-      order_index: item?.order_index ?? nextIndex,
-    };
-
-    await onSave(updates);
-    setSaving(false);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { coords: _coords, ...rest } = form;
+      const updates: Partial<SeedItineraryItems> = {
+        ...rest,
+        seed_itinerary_day_id: dayId,
+        order_index: item?.order_index ?? nextIndex,
+      };
+      // Only include coords if explicitly set via POI selection
+      if (coordsManuallySet) {
+        updates.coords = form.coords;
+      }
+      await onSave(updates);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleSelectPOI = (place: any) => {
+  const handleSelectPOIInternal = (place: PlacePointResult) => {
     setForm((f) => ({
       ...f,
       place_id: place.id,
       location_name: place.name_en || place.name_default,
       coords: `POINT(${place.lng} ${place.lat})`,
     }));
+    setCoordsManuallySet(true);
     setShowPOISearch(false);
     clear();
+  };
+
+  const handleSelectPOI = (place: PlacePointResult) => {
+    handleSelectPOIInternal(place);
   };
 
   return (
@@ -69,7 +115,10 @@ export default function ActivityEditor({
         <h4 className="font-semibold text-sm text-gray-900">
           {isNew ? "New Activity" : "Edit Activity"}
         </h4>
-        <button onClick={onCancel} className="text-gray-400 hover:text-gray-600">
+        <button
+          onClick={onCancel}
+          className="text-gray-400 hover:text-gray-600"
+        >
           ✕
         </button>
       </div>
@@ -89,7 +138,8 @@ export default function ActivityEditor({
       {/* POI Search/Match */}
       <div>
         <label className="text-xs font-medium text-gray-600">
-          Link to POI {form.place_id && <span className="text-green-600">✓ Matched</span>}
+          Link to POI{" "}
+          {form.place_id && <span className="text-green-600">✓ Matched</span>}
         </label>
         <div className="relative">
           <input
@@ -132,10 +182,17 @@ export default function ActivityEditor({
 
         {form.place_id && (
           <div className="mt-1 text-xs">
-            <span className="text-green-600">Matched to: {form.location_name}</span>
+            <span className="text-green-600">
+              Matched to: {form.location_name}
+            </span>
             <button
               onClick={() =>
-                setForm((f) => ({ ...f, place_id: null, location_name: "", coords: null }))
+                setForm((f) => ({
+                  ...f,
+                  place_id: null,
+                  location_name: "",
+                  coords: null,
+                }))
               }
               className="ml-2 text-red-600 underline"
             >
@@ -147,7 +204,9 @@ export default function ActivityEditor({
 
       {/* Location name (manual) */}
       <div>
-        <label className="text-xs font-medium text-gray-600">Location Name</label>
+        <label className="text-xs font-medium text-gray-600">
+          Location Name
+        </label>
         <input
           type="text"
           value={form.location_name}
@@ -165,7 +224,9 @@ export default function ActivityEditor({
           <label className="text-xs font-medium text-gray-600">Type</label>
           <select
             value={form.item_type}
-            onChange={(e) => setForm((f) => ({ ...f, item_type: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, item_type: e.target.value }))
+            }
             className="w-full border rounded-lg px-3 py-2 text-sm mt-1"
           >
             <option value="activity">Activity</option>
@@ -176,12 +237,17 @@ export default function ActivityEditor({
           </select>
         </div>
         <div>
-          <label className="text-xs font-medium text-gray-600">Duration (min)</label>
+          <label className="text-xs font-medium text-gray-600">
+            Duration (min)
+          </label>
           <input
             type="number"
             value={form.duration_minutes}
             onChange={(e) =>
-              setForm((f) => ({ ...f, duration_minutes: parseInt(e.target.value) || 0 }))
+              setForm((f) => ({
+                ...f,
+                duration_minutes: parseInt(e.target.value) || 0,
+              }))
             }
             className="w-full border rounded-lg px-3 py-2 text-sm mt-1"
           />

@@ -50,7 +50,7 @@ export interface Trip {
   title: string;
   description: string | null;
   destination: string | null;
-  destination_coords: { lat: number; lng: number } | null;
+  destination_coords: string | null; // PostGIS geometry string (hex WKB or WKT)
   image_url: string | null;
   image_blurhash: string | null;
   image_properties: Record<string, string> | null; // e.g. { photographer: "John Doe", photographer_url: "", alt_text: "" }
@@ -103,7 +103,7 @@ export interface ItineraryDay {
   created_by: string;
   city: string | null;
   country: string | null;
-  rep_point: { lat: number; lng: number } | null;
+  rep_point: string | null; // PostGIS geometry string (hex WKB or WKT)
   description: string | null;
   image_url: string | null;
   image_blurhash: string | null;
@@ -136,7 +136,7 @@ export interface ItineraryItem {
   item_type: string;
   location_name: string | null;
   location_address: string | null;
-  location_coords: { lat: number; lng: number } | null;
+  location_coords: string | null; // PostGIS geometry string (hex WKB or WKT)
   start_time: string | null;
   end_time: string | null;
   duration_minutes: number | null;
@@ -163,7 +163,7 @@ export interface SavedPlaces {
   description: string | null;
   category: string | null;
   address: string | null;
-  coords: { lat: number; lng: number } | null;
+  coords: string | null; // PostGIS geometry string (hex WKB or WKT)
   google_place_id: string | null;
   rating: number | null; // 1-5
   price_level: number | null;
@@ -213,7 +213,7 @@ export interface Place {
   region: string | null;
   country: string | null;
   postal_code: string | null;
-  coords: { lat: number; lng: number } | null;
+  coords: string | null;
   bounding_box: {
     northeast: { lat: number; lng: number };
     southwest: { lat: number; lng: number };
@@ -298,7 +298,7 @@ export interface SeedItineraryItems {
 
   location_name: string | null;
   location_address: string | null;
-  coords: { lat: number; lng: number } | null;
+  coords: string | null; // PostGIS geometry string (hex WKB or WKT)
   place_id: string | null; // e.g. Google Place ID, Foursquare Venue ID
 
   order_index: number;

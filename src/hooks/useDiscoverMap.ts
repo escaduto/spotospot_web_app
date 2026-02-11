@@ -14,9 +14,9 @@ import {
 } from "../map/scripts/poi-layers";
 import {
   getPlacesInBounds,
+  PlacePointResult,
   placesToGeoJSON,
   type PlaceBounds,
-  type PlacePointResult,
 } from "../supabase/places";
 
 // -------------------------------------------------
@@ -257,29 +257,32 @@ export function useDiscoverMap() {
   }, []);
 
   // ------ Highlight search results on the map ------
-  const highlightPlaces = useCallback((places: PlacePointResult[], fitBounds = false) => {
-    const map = mapRef.current;
-    if (!map || places.length === 0) return;
+  const highlightPlaces = useCallback(
+    (places: PlacePointResult[], fitBounds = false) => {
+      const map = mapRef.current;
+      if (!map || places.length === 0) return;
 
-    const geojson = placesToGeoJSON(places);
-    updateHighlightSource(map, geojson);
-    setHighlightedCount(places.length);
+      const geojson = placesToGeoJSON(places);
+      updateHighlightSource(map, geojson);
+      setHighlightedCount(places.length);
 
-    // Optionally fit the map to show all highlighted places
-    if (fitBounds && places.length > 0) {
-      const bounds = new maplibregl.LngLatBounds();
-      places.forEach((place) => {
-        bounds.extend([place.lng, place.lat]);
-      });
+      // Optionally fit the map to show all highlighted places
+      if (fitBounds && places.length > 0) {
+        const bounds = new maplibregl.LngLatBounds();
+        places.forEach((place) => {
+          bounds.extend([place.lng, place.lat]);
+        });
 
-      map.fitBounds(bounds, {
-        padding: { top: 120, bottom: 120, left: 450, right: 120 },
-        maxZoom: 13, // Don't zoom out too much
-        minZoom: 11, // Don't zoom in too close when showing multiple
-        duration: 1500,
-      });
-    }
-  }, []);
+        map.fitBounds(bounds, {
+          padding: { top: 120, bottom: 120, left: 450, right: 120 },
+          maxZoom: 13, // Don't zoom out too much
+          minZoom: 11, // Don't zoom in too close when showing multiple
+          duration: 1500,
+        });
+      }
+    },
+    [],
+  );
 
   // ------ Clear highlighted places ------
   const clearHighlights = useCallback(() => {

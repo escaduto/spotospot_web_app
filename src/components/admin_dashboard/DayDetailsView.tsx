@@ -12,6 +12,7 @@ import PhotoSearchModal from "./PhotoSearchModal";
 import DayDetailsMap from "./DayDetailsMap";
 import ActivityItem from "./ActivityItem";
 import ActivityEditor from "./ActivityEditor";
+import { PlacePointResult } from "@/src/supabase/places";
 
 interface Props {
   day: SeedItineraryDays;
@@ -28,6 +29,12 @@ export default function DayDetailsView({ day, items, onBack, refetch }: Props) {
   const [addingItem, setAddingItem] = useState(false);
   const [busy, setBusy] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [searchPOIs, setSearchPOIs] = useState<PlacePointResult[]>([]);
+  const [mapSelectedPOI, setMapSelectedPOI] = useState<PlacePointResult | null>(
+    null,
+  );
+  const [dragFromIdx, setDragFromIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
   const isApproved = day.approval_status === "approved";
 
@@ -42,6 +49,7 @@ export default function DayDetailsView({ day, items, onBack, refetch }: Props) {
 
   // Update form when day changes
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDayForm({
       title: day.title ?? "",
       city: day.city ?? "",
@@ -54,19 +62,30 @@ export default function DayDetailsView({ day, items, onBack, refetch }: Props) {
 
   const handleSaveDay = async () => {
     setBusy(true);
+    // Only send fields that have a value (avoid sending columns that might not match DB)
+    const payload: Record<string, string | null> = {
+      title: dayForm.title || day.title, // title is required, fallback to existing
+    };
+    // Only include optional fields if they changed
+    if (dayForm.city !== (day.city ?? ""))
+      payload.city = dayForm.city || null;
+    if (dayForm.country !== (day.country ?? ""))
+      payload.country = dayForm.country || null;
+    if (dayForm.description !== (day.description ?? ""))
+      payload.description = dayForm.description || null;
+    if (dayForm.category_type !== (day.category_type ?? ""))
+      payload.category_type = dayForm.category_type || null;
+    if (dayForm.notes !== (day.notes ?? ""))
+      payload.notes = dayForm.notes || null;
+
     const { error } = await supabase
       .from("seed_itinerary_days")
-      .update({
-        title: dayForm.title,
-        city: dayForm.city || null,
-        country: dayForm.country || null,
-        description: dayForm.description || null,
-        category_type: dayForm.category_type || null,
-        notes: dayForm.notes || null,
-      })
+      .update(payload)
       .eq("id", day.id);
 
-    if (!error) {
+    if (error) {
+      console.error("Error saving day:", error.message, error.details, error.hint);
+    } else {
       setEditingDay(false);
       refetch();
     }
@@ -76,7 +95,7 @@ export default function DayDetailsView({ day, items, onBack, refetch }: Props) {
   const handlePhotoSelect = async (
     url: string,
     properties: Record<string, string>,
-    blur_hash: string | null | undefined
+    blur_hash: string | null | undefined,
   ) => {
     await supabase
       .from("seed_itinerary_days")
@@ -113,7 +132,7 @@ export default function DayDetailsView({ day, items, onBack, refetch }: Props) {
 
   const handleUpdateItem = async (
     itemId: string,
-    updates: Partial<SeedItineraryItems>
+    updates: Partial<SeedItineraryItems>,
   ) => {
     await supabase
       .from("seed_itinerary_items")
@@ -123,8 +142,10 @@ export default function DayDetailsView({ day, items, onBack, refetch }: Props) {
     refetch();
   };
 
-  const handleAddItem = async (newItem: Omit<SeedItineraryItems, "id">) => {
-    await supabase.from("seed_itinerary_items").insert(newItem);
+  const handleAddItem = async (newItem: Partial<SeedItineraryItems>) => {
+    await supabase
+      .from("seed_itinerary_items")
+      .insert(newItem as Omit<SeedItineraryItems, "id">);
     setAddingItem(false);
     refetch();
   };
@@ -135,11 +156,66 @@ export default function DayDetailsView({ day, items, onBack, refetch }: Props) {
     refetch();
   };
 
+  const handleReorder = async (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+    const sorted = [...items].sort((a, b) => a.order_index - b.order_index);
+    if (fromIndex < 0 || toIndex < 0 || fromIndex >= sorted.length || toIndex >= sorted.length) return;
+
+    // Build new order: remove the dragged item, insert at target position
+    const reordered = [...sorted];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+
+    // Collect the original time slots (keyed by order position)
+    const originalSlots = sorted.map((item) => ({
+      start_time: item.start_time,
+      end_time: item.end_time,
+    }));
+
+    setBusy(true);
+    // Update all items that changed position
+    const updates = reordered
+      .map((item, idx) => {
+        const newOrderIndex = sorted[idx].order_index; // use the original order_index values
+        const slot = originalSlots[idx];
+        if (
+          item.order_index === newOrderIndex &&
+          item.start_time === slot.start_time &&
+          item.end_time === slot.end_time
+        ) {
+          return null; // no change
+        }
+        return supabase
+          .from("seed_itinerary_items")
+          .update({
+            order_index: newOrderIndex,
+            start_time: slot.start_time,
+            end_time: slot.end_time,
+          })
+          .eq("id", item.id);
+      })
+      .filter(Boolean);
+
+    await Promise.all(updates);
+    setBusy(false);
+    refetch();
+  };
+
+  // Clear search POIs when editing stops
+  const handleCancelEditing = () => {
+    setEditingItemId(null);
+    setSearchPOIs([]);
+    setMapSelectedPOI(null);
+  };
+
+  const handleCancelAdding = () => {
+    setAddingItem(false);
+    setSearchPOIs([]);
+    setMapSelectedPOI(null);
+  };
+
   // Parse rep_point for display
   const repPointParsed = parsePoint(day.rep_point);
-  const activityPoints = items
-    .map((item) => parsePoint(item.coords))
-    .filter((p) => p !== null) as Array<{ lng: number; lat: number }>;
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
@@ -170,7 +246,9 @@ export default function DayDetailsView({ day, items, onBack, refetch }: Props) {
             </button>
             <button
               onClick={handleReject}
-              disabled={busy || isApproved || day.approval_status === "rejected"}
+              disabled={
+                busy || isApproved || day.approval_status === "rejected"
+              }
               className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-40"
             >
               ✗ Reject
@@ -198,6 +276,8 @@ export default function DayDetailsView({ day, items, onBack, refetch }: Props) {
               refetch();
             }}
             centerPoint={repPointParsed}
+            searchPOIs={editingItemId || addingItem ? searchPOIs : []}
+            onSelectSearchPOI={setMapSelectedPOI}
           />
           {editingItemId && (
             <div className="absolute top-4 left-4 bg-yellow-100 border-2 border-yellow-500 px-4 py-2 rounded-lg shadow-lg">
@@ -325,36 +405,63 @@ export default function DayDetailsView({ day, items, onBack, refetch }: Props) {
               </div>
 
               <div className="space-y-2">
-                {items
-                  .sort((a, b) => a.order_index - b.order_index)
-                  .map((item) =>
+                {(() => {
+                  const sorted = [...items].sort(
+                    (a, b) => a.order_index - b.order_index,
+                  );
+                  return sorted.map((item, idx) =>
                     editingItemId === item.id ? (
                       <ActivityEditor
                         key={item.id}
                         item={item}
                         dayId={day.id}
                         onSave={(updates) => handleUpdateItem(item.id, updates)}
-                        onCancel={() => setEditingItemId(null)}
+                        onCancel={handleCancelEditing}
                         onDelete={() => handleDeleteItem(item.id)}
+                        mapCenter={repPointParsed ?? undefined}
+                        onSearchResultsChange={setSearchPOIs}
+                        mapSelectedPOI={mapSelectedPOI}
+                        onMapPOIConsumed={() => setMapSelectedPOI(null)}
                       />
                     ) : (
                       <ActivityItem
                         key={item.id}
                         item={item}
+                        index={idx}
                         isSelected={selectedItemId === item.id}
                         onSelect={() => setSelectedItemId(item.id)}
                         onEdit={() => setEditingItemId(item.id)}
-                        disabled={isApproved}
+                        disabled={isApproved || busy}
+                        onDragStart={setDragFromIdx}
+                        onDragOver={setDragOverIdx}
+                        onDragEnd={() => {
+                          if (dragFromIdx != null && dragOverIdx != null && dragFromIdx !== dragOverIdx) {
+                            handleReorder(dragFromIdx, dragOverIdx);
+                          }
+                          setDragFromIdx(null);
+                          setDragOverIdx(null);
+                        }}
+                        isDragOver={dragOverIdx === idx && dragFromIdx !== idx}
+                        isDragging={dragFromIdx === idx}
                       />
-                    )
-                  )}
+                    ),
+                  );
+                })()}
 
                 {addingItem && (
                   <ActivityEditor
                     dayId={day.id}
-                    nextIndex={items.length}
+                    nextIndex={
+                      items.length > 0
+                        ? Math.max(...items.map((i) => i.order_index)) + 1
+                        : 1
+                    }
                     onSave={handleAddItem}
-                    onCancel={() => setAddingItem(false)}
+                    onCancel={handleCancelAdding}
+                    mapCenter={repPointParsed ?? undefined}
+                    onSearchResultsChange={setSearchPOIs}
+                    mapSelectedPOI={mapSelectedPOI}
+                    onMapPOIConsumed={() => setMapSelectedPOI(null)}
                   />
                 )}
               </div>

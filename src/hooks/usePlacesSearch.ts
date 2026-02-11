@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { searchPlaces, type PlacePointResult } from "../supabase/places";
+import { PlacePointResult, searchPlaces } from "../supabase/places";
 
 /**
  * Debounced autocomplete search hook for the places table.
@@ -12,36 +12,39 @@ export function usePlacesSearch(mapCenter?: { lng: number; lat: number }) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchIdRef = useRef(0); // Track requests to ignore stale responses
 
-  const search = useCallback(async (q: string) => {
-    if (q.trim().length < 2) {
-      setResults([]);
-      setIsOpen(false);
-      setLoading(false);
-      return;
-    }
-
-    const fetchId = ++fetchIdRef.current;
-    setLoading(true);
-
-    try {
-      const data = await searchPlaces(q.trim(), 100, mapCenter);
-
-      // Only update if this is still the latest request
-      if (fetchId === fetchIdRef.current) {
-        setResults(data);
-        setIsOpen(data.length > 0);
-      }
-    } catch (error) {
-      if (fetchId === fetchIdRef.current) {
-        console.error("Search error:", error);
+  const search = useCallback(
+    async (q: string) => {
+      if (q.trim().length < 2) {
         setResults([]);
-      }
-    } finally {
-      if (fetchId === fetchIdRef.current) {
+        setIsOpen(false);
         setLoading(false);
+        return;
       }
-    }
-  }, [mapCenter]);
+
+      const fetchId = ++fetchIdRef.current;
+      setLoading(true);
+
+      try {
+        const data = await searchPlaces(q.trim(), 100, mapCenter);
+
+        // Only update if this is still the latest request
+        if (fetchId === fetchIdRef.current) {
+          setResults(data);
+          setIsOpen(data.length > 0);
+        }
+      } catch (error) {
+        if (fetchId === fetchIdRef.current) {
+          console.error("Search error:", error);
+          setResults([]);
+        }
+      } finally {
+        if (fetchId === fetchIdRef.current) {
+          setLoading(false);
+        }
+      }
+    },
+    [mapCenter],
+  );
 
   const handleQueryChange = useCallback(
     (value: string) => {
