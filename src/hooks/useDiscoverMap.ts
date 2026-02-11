@@ -7,13 +7,16 @@ import {
   loadCategoryIcons,
   addPOILayers,
   updatePOISource,
+  updateHighlightSource,
   POI_LAYER_ID,
   POI_CLUSTER_LAYER_ID,
+  POI_HIGHLIGHT_LAYER_ID,
 } from "../map/scripts/poi-layers";
 import {
   getPlacesInBounds,
   placesToGeoJSON,
   type PlaceBounds,
+  type PlacePointResult,
 } from "../supabase/places";
 
 // -------------------------------------------------
@@ -48,8 +51,14 @@ export function useDiscoverMap() {
   const [selectedPOI, setSelectedPOI] = useState<SelectedPOI | null>(null);
   const [poiCount, setPOICount] = useState(0);
   const [loadingPOIs, setLoadingPOIs] = useState(false);
+  const [mapCenter, setMapCenter] = useState<{ lng: number; lat: number }>({
+    lng: -122.4107,
+    lat: 37.7784,
+  });
+  const [highlightedCount, setHighlightedCount] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchIdRef = useRef(0); // monotonic counter to ignore stale responses
+  const lastBoundsRef = useRef<string | null>(null); // Track last fetched bounds
 
   // ------ Fetch POIs for current viewport ------
   const fetchPOIs = useCallback(async () => {
@@ -64,15 +73,24 @@ export function useDiscoverMap() {
       return;
     }
 
-    const id = ++fetchIdRef.current;
     const bounds = map.getBounds();
-
     const boundsObj: PlaceBounds = {
       minLng: bounds.getWest(),
       minLat: bounds.getSouth(),
       maxLng: bounds.getEast(),
       maxLat: bounds.getNorth(),
     };
+
+    // Create a bounds signature to check if we've already fetched this area
+    const boundsSignature = `${boundsObj.minLng.toFixed(4)},${boundsObj.minLat.toFixed(4)},${boundsObj.maxLng.toFixed(4)},${boundsObj.maxLat.toFixed(4)},${zoom.toFixed(1)}`;
+
+    // Skip if we've already fetched this exact viewport
+    if (lastBoundsRef.current === boundsSignature) {
+      return;
+    }
+
+    lastBoundsRef.current = boundsSignature;
+    const id = ++fetchIdRef.current;
 
     setLoadingPOIs(true);
     try {
@@ -95,8 +113,14 @@ export function useDiscoverMap() {
 
   // ------ Debounced handler for moveend / zoomend ------
   const handleViewportChange = useCallback(() => {
+    const map = mapRef.current;
+    if (map) {
+      const center = map.getCenter();
+      setMapCenter({ lng: center.lng, lat: center.lat });
+    }
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchPOIs(), 500);
+    // Increase debounce to 800ms for better performance
+    debounceRef.current = setTimeout(() => fetchPOIs(), 800);
   }, [fetchPOIs]);
 
   // ------ Initialise map ------
@@ -132,8 +156,8 @@ export function useDiscoverMap() {
     // Viewport change → reload POIs
     map.on("moveend", handleViewportChange);
 
-    // ---- Click: individual POI ----
-    map.on("click", POI_LAYER_ID, (e) => {
+    // ---- Click handler for POIs ----
+    const handlePOIClick = (e: maplibregl.MapLayerMouseEvent) => {
       if (!e.features?.length) return;
       const feature = e.features[0];
       const props = feature.properties!;
@@ -160,7 +184,11 @@ export function useDiscoverMap() {
         phone_number: props.phone_number,
         coordinates: coords,
       });
-    });
+    };
+
+    // Click listeners for both regular and highlighted POIs
+    map.on("click", POI_LAYER_ID, handlePOIClick);
+    map.on("click", POI_HIGHLIGHT_LAYER_ID, handlePOIClick);
 
     // ---- Click: cluster → zoom in ----
     map.on("click", POI_CLUSTER_LAYER_ID, (e) => {
@@ -186,23 +214,20 @@ export function useDiscoverMap() {
     // ---- Click: empty area → deselect ----
     map.on("click", (e) => {
       const hits = map.queryRenderedFeatures(e.point, {
-        layers: [POI_LAYER_ID, POI_CLUSTER_LAYER_ID],
+        layers: [POI_LAYER_ID, POI_CLUSTER_LAYER_ID, POI_HIGHLIGHT_LAYER_ID],
       });
       if (hits.length === 0) setSelectedPOI(null);
     });
 
     // ---- Cursor affordance ----
-    map.on("mouseenter", POI_LAYER_ID, () => {
-      map.getCanvas().style.cursor = "pointer";
-    });
-    map.on("mouseleave", POI_LAYER_ID, () => {
-      map.getCanvas().style.cursor = "";
-    });
-    map.on("mouseenter", POI_CLUSTER_LAYER_ID, () => {
-      map.getCanvas().style.cursor = "pointer";
-    });
-    map.on("mouseleave", POI_CLUSTER_LAYER_ID, () => {
-      map.getCanvas().style.cursor = "";
+    const layers = [POI_LAYER_ID, POI_CLUSTER_LAYER_ID, POI_HIGHLIGHT_LAYER_ID];
+    layers.forEach((layerId) => {
+      map.on("mouseenter", layerId, () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", layerId, () => {
+        map.getCanvas().style.cursor = "";
+      });
     });
 
     // ---- Controls ----
@@ -231,6 +256,40 @@ export function useDiscoverMap() {
     mapRef.current?.flyTo({ center: [lng, lat], zoom, duration: 1500 });
   }, []);
 
+  // ------ Highlight search results on the map ------
+  const highlightPlaces = useCallback((places: PlacePointResult[], fitBounds = false) => {
+    const map = mapRef.current;
+    if (!map || places.length === 0) return;
+
+    const geojson = placesToGeoJSON(places);
+    updateHighlightSource(map, geojson);
+    setHighlightedCount(places.length);
+
+    // Optionally fit the map to show all highlighted places
+    if (fitBounds && places.length > 0) {
+      const bounds = new maplibregl.LngLatBounds();
+      places.forEach((place) => {
+        bounds.extend([place.lng, place.lat]);
+      });
+
+      map.fitBounds(bounds, {
+        padding: { top: 120, bottom: 120, left: 450, right: 120 },
+        maxZoom: 13, // Don't zoom out too much
+        minZoom: 11, // Don't zoom in too close when showing multiple
+        duration: 1500,
+      });
+    }
+  }, []);
+
+  // ------ Clear highlighted places ------
+  const clearHighlights = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    updateHighlightSource(map, { type: "FeatureCollection", features: [] });
+    setHighlightedCount(0);
+  }, []);
+
   const closePOI = useCallback(() => setSelectedPOI(null), []);
 
   return {
@@ -242,5 +301,9 @@ export function useDiscoverMap() {
     poiCount,
     loadingPOIs,
     flyTo,
+    mapCenter,
+    highlightPlaces,
+    clearHighlights,
+    highlightedCount,
   };
 }

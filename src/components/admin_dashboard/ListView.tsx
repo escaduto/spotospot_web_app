@@ -28,7 +28,6 @@ export default function ListView({ days, onSelect }: Props) {
       {days.map((day) => (
         <button
           key={day.id}
-          disabled={day.approval_status === "approved"}
           onClick={() => onSelect(day)}
           className="text-left bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-md transition group"
         >

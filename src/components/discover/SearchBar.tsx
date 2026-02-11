@@ -7,11 +7,17 @@ import type { PlacePointResult } from "@/src/supabase/places";
 
 interface SearchBarProps {
   onSelectPlace: (place: PlacePointResult) => void;
+  onShowAllResults?: (places: PlacePointResult[]) => void;
+  mapCenter?: { lng: number; lat: number };
 }
 
-export default function SearchBar({ onSelectPlace }: SearchBarProps) {
+export default function SearchBar({
+  onSelectPlace,
+  onShowAllResults,
+  mapCenter,
+}: SearchBarProps) {
   const { query, results, loading, isOpen, handleQueryChange, clear, close } =
-    usePlacesSearch();
+    usePlacesSearch(mapCenter);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on outside click
@@ -89,38 +95,70 @@ export default function SearchBar({ onSelectPlace }: SearchBarProps) {
 
       {/* ---- Results dropdown ---- */}
       {isOpen && (
-        <div className="absolute top-full mt-1.5 left-0 right-0 bg-white rounded-xl border border-gray-200 shadow-xl max-h-80 overflow-y-auto z-50">
-          {results.map((place) => {
-            const config = getCategoryConfig(place.category_group);
-            return (
-              <button
-                key={place.id}
-                onClick={() => handleSelect(place)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors text-left border-b border-gray-50 last:border-0"
+        <div className="absolute top-full mt-1.5 left-0 right-0 bg-white rounded-xl border border-gray-200 shadow-xl max-h-96 overflow-hidden z-50 flex flex-col">
+          {/* Show all results button */}
+          {onShowAllResults && results.length > 1 && (
+            <button
+              onClick={() => {
+                onShowAllResults(results);
+                close();
+              }}
+              className="w-full px-3 py-2.5 bg-teal-50 hover:bg-teal-100 transition-colors text-left border-b border-teal-200 flex items-center gap-2"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="text-teal-600"
               >
-                <span className="text-lg shrink-0">{config.emoji}</span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {place.name_en || place.name_default}
-                  </p>
-                  <p className="text-xs text-gray-500 truncate">
-                    {[place.address, place.city, place.country]
-                      .filter(Boolean)
-                      .join(", ")}
-                  </p>
-                </div>
-                <span
-                  className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 font-medium"
-                  style={{
-                    backgroundColor: config.bgColor,
-                    color: config.color,
-                  }}
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+              <span className="text-sm font-medium text-teal-700">
+                Show all {results.length} results on map
+              </span>
+            </button>
+          )}
+
+          {/* Individual results */}
+          <div className="overflow-y-auto max-h-80">
+            {results.map((place) => {
+              const config = getCategoryConfig(place.category_group);
+              return (
+                <button
+                  key={place.id}
+                  onClick={() => handleSelect(place)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors text-left border-b border-gray-50 last:border-0"
                 >
-                  {config.label}
-                </span>
-              </button>
-            );
-          })}
+                  <span className="text-lg shrink-0">{config.emoji}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {place.name_en || place.name_default}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {[place.address, place.city, place.country]
+                        .filter(Boolean)
+                        .join(", ")}
+                    </p>
+                  </div>
+                  <span
+                    className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 font-medium"
+                    style={{
+                      backgroundColor: config.bgColor,
+                      color: config.color,
+                    }}
+                  >
+                    {config.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

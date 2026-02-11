@@ -95,10 +95,12 @@ export async function getPlacesInBounds(
 
 /**
  * Autocomplete search – matches against name, address, city.
+ * If mapCenter is provided, results are sorted by distance from that point and limited to closest results.
  */
 export async function searchPlaces(
   query: string,
-  limit: number = 15,
+  limit: number = 100,
+  mapCenter?: { lng: number; lat: number },
 ): Promise<PlacePointResult[]> {
   const supabase = createClient();
 
@@ -112,7 +114,52 @@ export async function searchPlaces(
     return [];
   }
 
-  return (data as PlacePointResult[]) ?? [];
+  const places = (data as PlacePointResult[]) ?? [];
+
+  // If map center provided, sort by distance and limit to reasonable radius
+  if (mapCenter && places.length > 0) {
+    // Calculate distances and sort
+    const placesWithDistance = places.map((place) => ({
+      place,
+      distance: getDistance(mapCenter.lat, mapCenter.lng, place.lat, place.lng),
+    }));
+
+    placesWithDistance.sort((a, b) => a.distance - b.distance);
+
+    // For "show all", limit to places within 50km or top 50 results, whichever is smaller
+    const maxDistance = 50; // km
+    const maxResults = 50;
+
+    const filtered = placesWithDistance
+      .filter((item) => item.distance <= maxDistance)
+      .slice(0, maxResults)
+      .map((item) => item.place);
+
+    return filtered.length > 0 ? filtered : placesWithDistance.slice(0, 20).map((item) => item.place);
+  }
+
+  return places.slice(0, 20);
+}
+
+/**
+ * Calculate distance between two points using Haversine formula (in km)
+ */
+function getDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371; // Earth's radius in km
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function toRad(degrees: number): number {
+  return degrees * (Math.PI / 180);
 }
 
 /**

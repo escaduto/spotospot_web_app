@@ -66,19 +66,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /* ---------- bootstrap session -------------------------------------- */
 
   useEffect(() => {
+    let mounted = true;
+
     const init = async () => {
-      const {
-        data: { session: currentSession },
-      } = await supabase.auth.getSession();
+      try {
+        // Race the auth check with a 3 second timeout
+        const authPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise<null>((resolve) =>
+          setTimeout(() => resolve(null), 3000)
+        );
 
-      setSession(currentSession);
-      setUser(currentSession?.user ?? null);
+        const result = await Promise.race([authPromise, timeoutPromise]);
 
-      if (currentSession?.user) {
-        await fetchProfile(currentSession.user.id);
+        if (!mounted) return;
+
+        if (result === null) {
+          // Timeout occurred - continue without auth
+          console.warn("Auth session check timed out, continuing without auth");
+          setLoading(false);
+          return;
+        }
+
+        const { data: { session: currentSession } } = result;
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
+
+        if (currentSession?.user && mounted) {
+          // Fetch profile with timeout
+          const profilePromise = fetchProfile(currentSession.user.id);
+          const profileTimeout = new Promise<void>((resolve) =>
+            setTimeout(() => resolve(), 2000)
+          );
+          await Promise.race([profilePromise, profileTimeout]);
+        }
+      } catch (error) {
+        console.error("Error checking auth session:", error);
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
       }
-
-      setLoading(false);
     };
 
     init();
@@ -96,7 +123,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, [supabase, fetchProfile]);
 
   /* ---------- auth actions ------------------------------------------- */

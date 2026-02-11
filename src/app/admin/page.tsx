@@ -1,15 +1,11 @@
 "use client";
 
 import AdminStats from "@/src/components/admin_dashboard/AdminStats";
-import DayDetailModal from "@/src/components/admin_dashboard/DayDetailModal";
 import FilterBar from "@/src/components/admin_dashboard/FilterBar";
 import ListView from "@/src/components/admin_dashboard/ListView";
 import MapView from "@/src/components/admin_dashboard/MapView";
 import { useAdminData } from "@/src/hooks/useAdminData";
-import type {
-  SeedItineraryDays,
-  SeedItineraryItems,
-} from "@/src/supabase/types";
+import type { SeedItineraryDays } from "@/src/supabase/types";
 import { createClient } from "@/src/supabase/client";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -33,27 +29,7 @@ export default function AdminPage() {
     country: "",
     search: "",
   });
-  const [selectedDay, setSelectedDay] = useState<SeedItineraryDays | null>(
-    null,
-  );
-  const [selectedDayItems, setSelectedDayItems] = useState<
-    SeedItineraryItems[]
-  >([]);
-  const [showDetail, setShowDetail] = useState(false);
-
-  const {
-    days,
-    items,
-    stats,
-    locations,
-    refetch,
-    approveDay,
-    rejectDay,
-    updateDay,
-    updateItem,
-    addItem,
-    deleteItem,
-  } = useAdminData(filters);
+  const { days, items, stats, locations } = useAdminData(filters);
 
   useEffect(() => {
     (async () => {
@@ -76,17 +52,8 @@ export default function AdminPage() {
   }, []);
 
   const handleSelectDay = (day: SeedItineraryDays) => {
-    setSelectedDay(day);
-    setSelectedDayItems(
-      items.filter((i) => i.seed_itinerary_day_id === day.id),
-    );
-    setShowDetail(true);
-  };
-
-  const handleCloseDetail = () => {
-    setShowDetail(false);
-    setSelectedDay(null);
-    setSelectedDayItems([]);
+    // Navigate to dedicated day details page
+    router.push(`/admin/day/${day.id}`);
   };
 
   if (loading) {
@@ -146,40 +113,6 @@ export default function AdminPage() {
         )}
       </main>
 
-      {showDetail && selectedDay && (
-        <DayDetailModal
-          day={selectedDay}
-          items={selectedDayItems}
-          onClose={handleCloseDetail}
-          onApprove={async () => {
-            await approveDay(selectedDay.id);
-            handleCloseDetail();
-            refetch();
-          }}
-          onReject={async () => {
-            await rejectDay(selectedDay.id);
-            handleCloseDetail();
-            refetch();
-          }}
-          onUpdateDay={async (updates) => {
-            await updateDay(selectedDay.id, updates);
-            refetch();
-          }}
-          onUpdateItem={async (itemId, updates) => {
-            await updateItem(itemId, updates);
-            refetch();
-          }}
-          onAddItem={async (item) => {
-            await addItem(item);
-            refetch();
-          }}
-          onDeleteItem={async (itemId) => {
-            await deleteItem(itemId);
-            refetch();
-          }}
-          refetch={refetch}
-        />
-      )}
     </div>
   );
 }
