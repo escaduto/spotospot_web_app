@@ -118,14 +118,20 @@ export interface ItineraryDay {
   updated_at: string;
 }
 
-type TransportationType =
+export type TransportationType =
   | "walking"
+  | "running"
+  | "hiking"
   | "driving"
+  | "rideshare"
+  | "car_rental"
   | "cycling"
+  | "bikeshare"
   | "flight"
   | "ferry"
   | "train"
   | "bus"
+  | "muni/tram"
   | "other";
 
 export interface ItineraryItem {
@@ -309,7 +315,31 @@ export interface SeedItineraryItems {
   cost_estimate: number | null;
   currency: string | null; // ISO 4217 code (e.g. "USD")
 
-  transportation_type: string | null; // e.g. "flight", "train", "car_rental"
+  transportation_type: TransportationType[]; // e.g. "flight", "train", "car_rental"
 
   notes: string | null;
+}
+
+export interface itinerary_item_routes {
+  id: string;
+  itinerary_day_id?: string | null;
+  seed_itinerary_day_id?: string | null;
+  from_item_id: string | null;
+  to_item_id: string;
+  transportation_type: TransportationType[]; // e.g. "walking", "driving", "flight"
+  geometry_geojson: string; // GeoJSON LineString as text
+  distance_m: number;
+  duration_s: number;
+}
+
+type RecalcStatus = "pending" | "processing" | "completed" | "failed";
+
+export interface RouteRecalculationQueue {
+  id: string;
+  itinerary_day_id: string | null;
+  seed_itinerary_day_id: string | null;
+  route_id: string;
+  status: RecalcStatus;
+  created_at: string;
+  updated_at: string;
 }

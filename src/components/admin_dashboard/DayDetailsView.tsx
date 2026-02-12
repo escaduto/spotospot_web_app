@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type {
   SeedItineraryDays,
   SeedItineraryItems,
+  itinerary_item_routes,
 } from "@/src/supabase/types";
 import { createClient } from "@/src/supabase/client";
 import Image from "next/image";
@@ -12,16 +13,24 @@ import PhotoSearchModal from "./PhotoSearchModal";
 import DayDetailsMap from "./DayDetailsMap";
 import ActivityItem from "./ActivityItem";
 import ActivityEditor from "./ActivityEditor";
+import RouteSegment from "./RouteSegment";
 import { PlacePointResult } from "@/src/supabase/places";
 
 interface Props {
   day: SeedItineraryDays;
   items: SeedItineraryItems[];
+  routes?: itinerary_item_routes[];
   onBack: () => void;
   refetch: () => void;
 }
 
-export default function DayDetailsView({ day, items, onBack, refetch }: Props) {
+export default function DayDetailsView({
+  day,
+  items,
+  routes,
+  onBack,
+  refetch,
+}: Props) {
   const supabase = createClient();
   const [editingDay, setEditingDay] = useState(false);
   const [showPhotoSearch, setShowPhotoSearch] = useState(false);
@@ -35,6 +44,10 @@ export default function DayDetailsView({ day, items, onBack, refetch }: Props) {
   );
   const [dragFromIdx, setDragFromIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const [recalculatingRouteIds, setRecalculatingRouteIds] = useState<
+    Set<string>
+  >(new Set());
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isApproved = day.approval_status === "approved";
 
@@ -49,7 +62,6 @@ export default function DayDetailsView({ day, items, onBack, refetch }: Props) {
 
   // Update form when day changes
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDayForm({
       title: day.title ?? "",
       city: day.city ?? "",
@@ -67,8 +79,7 @@ export default function DayDetailsView({ day, items, onBack, refetch }: Props) {
       title: dayForm.title || day.title, // title is required, fallback to existing
     };
     // Only include optional fields if they changed
-    if (dayForm.city !== (day.city ?? ""))
-      payload.city = dayForm.city || null;
+    if (dayForm.city !== (day.city ?? "")) payload.city = dayForm.city || null;
     if (dayForm.country !== (day.country ?? ""))
       payload.country = dayForm.country || null;
     if (dayForm.description !== (day.description ?? ""))
@@ -84,7 +95,8 @@ export default function DayDetailsView({ day, items, onBack, refetch }: Props) {
       .eq("id", day.id);
 
     if (error) {
-      console.error("Error saving day:", error.message, error.details, error.hint);
+      console.error("Error updating day:", error);
+      alert("Failed to save changes. Please try again.");
     } else {
       setEditingDay(false);
       refetch();
@@ -156,10 +168,74 @@ export default function DayDetailsView({ day, items, onBack, refetch }: Props) {
     refetch();
   };
 
+  // Poll route_recalculation_queue until route is done recalculating
+  const pollRouteRecalc = useCallback(
+    async (routeId: string) => {
+      const maxAttempts = 30; // ~30 seconds max
+      let attempt = 0;
+
+      const poll = async () => {
+        attempt++;
+
+        // Check if there are any pending/processing entries for this route
+        const { data } = await supabase
+          .from("route_recalculation_queue")
+          .select("id, status")
+          .eq("route_id", routeId)
+          .in("status", ["pending", "processing"])
+          .limit(1);
+
+        if (data && data.length > 0 && attempt < maxAttempts) {
+          // Still recalculating — poll again in 1s
+          pollTimerRef.current = setTimeout(poll, 1000);
+        } else {
+          // Done or timed out — refetch routes and clear recalc state
+          setRecalculatingRouteIds((prev) => {
+            const next = new Set(prev);
+            next.delete(routeId);
+            return next;
+          });
+          refetch();
+        }
+      };
+
+      poll();
+    },
+    [supabase, refetch],
+  );
+
+  // Clean up poll timer on unmount
+  useEffect(() => {
+    return () => {
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    };
+  }, []);
+
+  const handleUpdateRouteTransportTypes = async (
+    routeId: string,
+    transportationTypes: string[],
+  ) => {
+    // Update the route's transportation_type array
+    await supabase
+      .from("itinerary_item_routes")
+      .update({ transportation_type: transportationTypes })
+      .eq("id", routeId);
+
+    // Mark as recalculating and start polling
+    setRecalculatingRouteIds((prev) => new Set(prev).add(routeId));
+    pollRouteRecalc(routeId);
+  };
+
   const handleReorder = async (fromIndex: number, toIndex: number) => {
     if (fromIndex === toIndex) return;
     const sorted = [...items].sort((a, b) => a.order_index - b.order_index);
-    if (fromIndex < 0 || toIndex < 0 || fromIndex >= sorted.length || toIndex >= sorted.length) return;
+    if (
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= sorted.length ||
+      toIndex >= sorted.length
+    )
+      return;
 
     // Build new order: remove the dragged item, insert at target position
     const reordered = [...sorted];
@@ -278,6 +354,7 @@ export default function DayDetailsView({ day, items, onBack, refetch }: Props) {
             centerPoint={repPointParsed}
             searchPOIs={editingItemId || addingItem ? searchPOIs : []}
             onSelectSearchPOI={setMapSelectedPOI}
+            routes={routes}
           />
           {editingItemId && (
             <div className="absolute top-4 left-4 bg-yellow-100 border-2 border-yellow-500 px-4 py-2 rounded-lg shadow-lg">
@@ -404,48 +481,87 @@ export default function DayDetailsView({ day, items, onBack, refetch }: Props) {
                 </button>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-0">
                 {(() => {
                   const sorted = [...items].sort(
                     (a, b) => a.order_index - b.order_index,
                   );
-                  return sorted.map((item, idx) =>
-                    editingItemId === item.id ? (
-                      <ActivityEditor
-                        key={item.id}
-                        item={item}
-                        dayId={day.id}
-                        onSave={(updates) => handleUpdateItem(item.id, updates)}
-                        onCancel={handleCancelEditing}
-                        onDelete={() => handleDeleteItem(item.id)}
-                        mapCenter={repPointParsed ?? undefined}
-                        onSearchResultsChange={setSearchPOIs}
-                        mapSelectedPOI={mapSelectedPOI}
-                        onMapPOIConsumed={() => setMapSelectedPOI(null)}
-                      />
-                    ) : (
-                      <ActivityItem
-                        key={item.id}
-                        item={item}
-                        index={idx}
-                        isSelected={selectedItemId === item.id}
-                        onSelect={() => setSelectedItemId(item.id)}
-                        onEdit={() => setEditingItemId(item.id)}
-                        disabled={isApproved || busy}
-                        onDragStart={setDragFromIdx}
-                        onDragOver={setDragOverIdx}
-                        onDragEnd={() => {
-                          if (dragFromIdx != null && dragOverIdx != null && dragFromIdx !== dragOverIdx) {
-                            handleReorder(dragFromIdx, dragOverIdx);
-                          }
-                          setDragFromIdx(null);
-                          setDragOverIdx(null);
-                        }}
-                        isDragOver={dragOverIdx === idx && dragFromIdx !== idx}
-                        isDragging={dragFromIdx === idx}
-                      />
-                    ),
+
+                  // Build a lookup: from_item_id -> route
+                  const routeByFromItem = new Map(
+                    (routes ?? [])
+                      .filter((r) => r.from_item_id)
+                      .map((r) => [r.from_item_id!, r]),
                   );
+
+                  return sorted.flatMap((item, idx) => {
+                    const elements = [];
+
+                    // Render the activity item or editor
+                    elements.push(
+                      editingItemId === item.id ? (
+                        <ActivityEditor
+                          key={item.id}
+                          item={item}
+                          dayId={day.id}
+                          onSave={(updates) =>
+                            handleUpdateItem(item.id, updates)
+                          }
+                          onCancel={handleCancelEditing}
+                          onDelete={() => handleDeleteItem(item.id)}
+                          mapCenter={repPointParsed ?? undefined}
+                          onSearchResultsChange={setSearchPOIs}
+                          mapSelectedPOI={mapSelectedPOI}
+                          onMapPOIConsumed={() => setMapSelectedPOI(null)}
+                        />
+                      ) : (
+                        <ActivityItem
+                          key={item.id}
+                          item={item}
+                          index={idx}
+                          isSelected={selectedItemId === item.id}
+                          onSelect={() => setSelectedItemId(item.id)}
+                          onEdit={() => setEditingItemId(item.id)}
+                          disabled={isApproved || busy}
+                          onDragStart={setDragFromIdx}
+                          onDragOver={setDragOverIdx}
+                          onDragEnd={() => {
+                            if (
+                              dragFromIdx != null &&
+                              dragOverIdx != null &&
+                              dragFromIdx !== dragOverIdx
+                            ) {
+                              handleReorder(dragFromIdx, dragOverIdx);
+                            }
+                            setDragFromIdx(null);
+                            setDragOverIdx(null);
+                          }}
+                          isDragOver={
+                            dragOverIdx === idx && dragFromIdx !== idx
+                          }
+                          isDragging={dragFromIdx === idx}
+                        />
+                      ),
+                    );
+
+                    // Render route segment after this item (if route exists to next item)
+                    const route = routeByFromItem.get(item.id);
+                    if (route && idx < sorted.length - 1) {
+                      elements.push(
+                        <RouteSegment
+                          key={`route-${route.id}`}
+                          route={route}
+                          disabled={isApproved || busy}
+                          onUpdateTransportTypes={
+                            handleUpdateRouteTransportTypes
+                          }
+                          isRecalculating={recalculatingRouteIds.has(route.id)}
+                        />,
+                      );
+                    }
+
+                    return elements;
+                  });
                 })()}
 
                 {addingItem && (

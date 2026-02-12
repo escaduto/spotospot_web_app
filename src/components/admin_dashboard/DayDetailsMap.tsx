@@ -4,9 +4,16 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import { useBaseMap } from "@/src/hooks/useBaseMap";
-import type { SeedItineraryItems } from "@/src/supabase/types";
+import type {
+  SeedItineraryItems,
+  itinerary_item_routes,
+} from "@/src/supabase/types";
 import { parsePoint } from "@/src/utils/geo";
 import { getCategoryConfig } from "@/src/map/scripts/category-config";
+import {
+  getTransportConfig,
+  getSingleTransportConfig,
+} from "@/src/map/scripts/transport-config";
 import { PlacePointResult } from "@/src/supabase/places";
 
 interface Props {
@@ -18,6 +25,7 @@ interface Props {
   centerPoint: { lng: number; lat: number } | null;
   searchPOIs?: PlacePointResult[];
   onSelectSearchPOI?: (place: PlacePointResult) => void;
+  routes?: itinerary_item_routes[];
 }
 
 export default function DayDetailsMap({
@@ -29,6 +37,7 @@ export default function DayDetailsMap({
   centerPoint,
   searchPOIs,
   onSelectSearchPOI,
+  routes,
 }: Props) {
   const { mapContainerRef, mapRef, mapLoaded, fitBounds } = useBaseMap({
     initialCenter: centerPoint
@@ -156,7 +165,11 @@ export default function DayDetailsMap({
     const coords = parsePoint(selected.coords);
     if (!coords) return;
 
-    map.flyTo({ center: [coords.lng, coords.lat], zoom: Math.max(map.getZoom(), 13), duration: 800 });
+    map.flyTo({
+      center: [coords.lng, coords.lat],
+      zoom: Math.max(map.getZoom(), 13),
+      duration: 800,
+    });
   }, [selectedItemId, items, mapLoaded, mapRef]);
 
   // Handle map click to place marker when editing
@@ -215,6 +228,136 @@ export default function DayDetailsMap({
       searchMarkersRef.current.push(marker);
     });
   }, [searchPOIs, mapLoaded, mapRef]);
+
+  // Render route LineStrings with transportation type styling
+  const routeSourceIds = useRef<string[]>([]);
+  const routeMarkerRefs = useRef<maplibregl.Marker[]>([]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+
+    // Clean up previous route layers, sources, and markers
+    routeSourceIds.current.forEach((id) => {
+      if (map.getLayer(`${id}-line`)) map.removeLayer(`${id}-line`);
+      if (map.getSource(id)) map.removeSource(id);
+    });
+    routeSourceIds.current = [];
+
+    routeMarkerRefs.current.forEach((m) => m.remove());
+    routeMarkerRefs.current = [];
+
+    if (!routes?.length) return;
+
+    routes.forEach((route, idx) => {
+      let geojson: GeoJSON.LineString | null = null;
+      try {
+        const parsed =
+          typeof route.geometry_geojson === "string"
+            ? JSON.parse(route.geometry_geojson)
+            : route.geometry_geojson;
+        if (
+          parsed?.type === "LineString" &&
+          Array.isArray(parsed.coordinates)
+        ) {
+          geojson = parsed as GeoJSON.LineString;
+        }
+      } catch {
+        console.warn(`Route ${route.id}: invalid geometry_geojson`);
+        return;
+      }
+      if (!geojson) return;
+
+      const config = getTransportConfig(route.transportation_type);
+      const sourceId = `route-${route.id}-${idx}`;
+
+      map.addSource(sourceId, {
+        type: "geojson",
+        data: {
+          type: "Feature",
+          properties: {},
+          geometry: geojson,
+        },
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const paintProps: Record<string, any> = {
+        "line-color": config.color,
+        "line-width": 3,
+        "line-opacity": 0.8,
+      };
+      if (config.dashArray) {
+        paintProps["line-dasharray"] = config.dashArray;
+      }
+
+      map.addLayer({
+        id: `${sourceId}-line`,
+        type: "line",
+        source: sourceId,
+        layout: {
+          "line-cap": "round",
+          "line-join": "round",
+        },
+        paint: paintProps,
+      });
+
+      routeSourceIds.current.push(sourceId);
+
+      // Add transportation type icon at the midpoint of the route
+      const coords = geojson.coordinates;
+      if (coords.length >= 2) {
+        const midIdx = Math.floor(coords.length / 2);
+        const midPoint = coords[midIdx];
+
+        const distanceM = route.distance_m;
+        const durationS = route.duration_s;
+        const distLabel =
+          distanceM >= 1000
+            ? `${(distanceM / 1000).toFixed(1)}km`
+            : `${Math.round(distanceM)}m`;
+        const durLabel =
+          durationS >= 3600
+            ? `${Math.floor(durationS / 3600)}h${Math.round((durationS % 3600) / 60)}m`
+            : `${Math.round(durationS / 60)}min`;
+
+        const el = document.createElement("div");
+        el.className = "route-transport-icon";
+
+        // Show all transport type emojis for multi-type routes
+        const types = route.transportation_type ?? [];
+        const emojiStr =
+          types.length > 1
+            ? types.map((t) => getSingleTransportConfig(t).emoji).join(" ")
+            : config.emoji;
+
+        el.innerHTML = `
+          <div style="display:flex;align-items:center;gap:4px;background:white;border:2px solid ${config.color};border-radius:12px;padding:2px 8px;box-shadow:0 2px 6px rgba(0,0,0,0.15);cursor:default;white-space:nowrap;">
+            <span style="font-size:14px;">${emojiStr}</span>
+            <span style="font-size:10px;color:#374151;font-weight:500;">${distLabel} · ${durLabel}</span>
+          </div>
+        `;
+
+        const marker = new maplibregl.Marker({
+          element: el,
+          anchor: "center",
+        })
+          .setLngLat([midPoint[0], midPoint[1]])
+          .addTo(map);
+
+        routeMarkerRefs.current.push(marker);
+      }
+    });
+
+    return () => {
+      routeSourceIds.current.forEach((id) => {
+        if (map.getLayer(`${id}-line`)) map.removeLayer(`${id}-line`);
+        if (map.getSource(id)) map.removeSource(id);
+      });
+      routeSourceIds.current = [];
+      routeMarkerRefs.current.forEach((m) => m.remove());
+      routeMarkerRefs.current = [];
+    };
+  }, [routes, mapLoaded, mapRef]);
 
   return (
     <div className="relative w-full h-full" style={{ minHeight: "100%" }}>

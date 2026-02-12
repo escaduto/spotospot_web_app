@@ -6,6 +6,7 @@ import { createClient } from "@/src/supabase/client";
 import type {
   SeedItineraryDays,
   SeedItineraryItems,
+  itinerary_item_routes,
 } from "@/src/supabase/types";
 import DayDetailsView from "@/src/components/admin_dashboard/DayDetailsView";
 
@@ -19,6 +20,7 @@ export default function AdminDayDetailPage() {
   const [loading, setLoading] = useState(true);
   const [day, setDay] = useState<SeedItineraryDays | null>(null);
   const [items, setItems] = useState<SeedItineraryItems[]>([]);
+  const [routes, setRoutes] = useState<itinerary_item_routes[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -45,7 +47,7 @@ export default function AdminDayDetailPage() {
   }, [dayId]);
 
   const fetchData = async () => {
-    const [dayRes, itemsRes] = await Promise.all([
+    const [dayRes, itemsRes, routesRes] = await Promise.all([
       supabase
         .from("seed_itinerary_days")
         .select("*, rep_point::text")
@@ -56,15 +58,22 @@ export default function AdminDayDetailPage() {
         .select("*, coords::text")
         .eq("seed_itinerary_day_id", dayId)
         .order("order_index", { ascending: true }),
+      supabase
+        .from("itinerary_item_routes")
+        .select(
+          "id, seed_itinerary_day_id, from_item_id, to_item_id, transportation_type, geometry_geojson::text, distance_m, duration_s",
+        )
+        .eq("seed_itinerary_day_id", dayId),
     ]);
 
     if (dayRes.data) {
-      console.log("Day data (rep_point):", dayRes.data.rep_point);
       setDay(dayRes.data);
     }
     if (itemsRes.data) {
-      console.log("Items data (first item coords):", itemsRes.data[0]?.coords);
       setItems(itemsRes.data);
+    }
+    if (routesRes.data) {
+      setRoutes(routesRes.data);
     }
   };
 
@@ -82,6 +91,7 @@ export default function AdminDayDetailPage() {
     <DayDetailsView
       day={day}
       items={items}
+      routes={routes}
       onBack={() => router.push("/admin")}
       refetch={fetchData}
     />

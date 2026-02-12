@@ -67,9 +67,7 @@ export default function ActivityItem({
           className={`shrink-0 w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center ${
             !disabled ? "cursor-grab active:cursor-grabbing" : ""
           } ${
-            isSelected
-              ? "bg-blue-600 text-white"
-              : "bg-blue-100 text-blue-700"
+            isSelected ? "bg-blue-600 text-white" : "bg-blue-100 text-blue-700"
           }`}
         >
           {item.order_index}
