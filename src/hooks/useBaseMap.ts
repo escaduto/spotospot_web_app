@@ -52,7 +52,7 @@ export function useBaseMap(options: BaseMapOptions = {}) {
       zoom: initialZoom,
       attributionControl: false,
       minZoom: 2,
-      maxZoom: 18,
+      maxZoom: 22,
     });
 
     mapRef.current = map;
@@ -75,11 +75,11 @@ export function useBaseMap(options: BaseMapOptions = {}) {
     map.touchZoomRotate.disableRotation();
     map.addControl(
       new maplibregl.AttributionControl({ compact: true }),
-      "bottom-right"
+      "bottom-right",
     );
     map.addControl(
       new maplibregl.NavigationControl({ showCompass: false }),
-      "bottom-right"
+      "bottom-right",
     );
 
     // Cursor affordance for POI layers
@@ -106,12 +106,15 @@ export function useBaseMap(options: BaseMapOptions = {}) {
     (lng: number, lat: number, zoom: number = 15, duration: number = 1500) => {
       mapRef.current?.flyTo({ center: [lng, lat], zoom, duration });
     },
-    []
+    [],
   );
 
   // Fit bounds to show multiple points
   const fitBounds = useCallback(
-    (points: Array<{ lng: number; lat: number }>, options?: maplibregl.FitBoundsOptions) => {
+    (
+      points: Array<{ lng: number; lat: number }>,
+      options?: maplibregl.FitBoundsOptions,
+    ) => {
       const map = mapRef.current;
       if (!map || points.length === 0) return;
 
@@ -132,7 +135,7 @@ export function useBaseMap(options: BaseMapOptions = {}) {
         ...options,
       });
     },
-    [flyTo]
+    [flyTo],
   );
 
   return {

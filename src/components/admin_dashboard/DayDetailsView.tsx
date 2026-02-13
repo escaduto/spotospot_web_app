@@ -10,11 +10,11 @@ import { createClient } from "@/src/supabase/client";
 import Image from "next/image";
 import { parsePoint } from "@/src/utils/geo";
 import PhotoSearchModal from "./PhotoSearchModal";
-import DayDetailsMap from "./DayDetailsMap";
 import ActivityItem from "./ActivityItem";
 import ActivityEditor from "./ActivityEditor";
 import RouteSegment from "./RouteSegment";
 import { PlacePointResult } from "@/src/supabase/places";
+import DayDetailsMap from "./DayDetailsMap/DayDetailsMap";
 
 interface Props {
   day: SeedItineraryDays;

@@ -1,0 +1,68 @@
+import { poiCategoryList } from "@/src/map/scripts/category-config";
+import {
+  activitiesCircle,
+  activitiesLabel,
+  searchPOIsCircle,
+  searchPOIsIcons,
+  searchPOIsLabels,
+  routeLine,
+  routeBadgeBg,
+  routeBadge,
+} from "./mapStyles";
+import { transportIconsList } from "@/src/map/scripts/transport-config";
+
+/**
+ * Registers all GeoJSON sources and their layers once the map is loaded.
+ * Calling multiple times is safe — the guard returns early.
+ */
+function setUpMapLayers(map: maplibregl.Map) {
+  if (map.getSource("activities")) return;
+
+  // ── Icon images for POI category markers ──
+  poiCategoryList.forEach(async (category) => {
+    if (map.hasImage(category)) return;
+    const image = await map.loadImage(`/icons/${category}.png`);
+    map.addImage(category, image.data, { sdf: true });
+  });
+
+  // ── Icon images for transport markers ──
+  transportIconsList.forEach(async (icon) => {
+    if (map.hasImage(icon)) return;
+    const image = await map.loadImage(`/icons/${icon}.png`);
+    map.addImage(icon, image.data, { sdf: true });
+  });
+
+  // ── Routes source (lines rendered below points) ──
+  map.addSource("routes", {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] },
+  });
+  map.addLayer(routeLine);
+
+  // ── Route midpoints source (icon + label badges) ──
+  map.addSource("route-midpoints", {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] },
+  });
+  map.addLayer(routeBadgeBg);
+  map.addLayer(routeBadge);
+
+  // ── Activities source ──
+  map.addSource("activities", {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] },
+  });
+  map.addLayer(activitiesCircle);
+  map.addLayer(activitiesLabel);
+
+  // ── Search POIs source ──
+  map.addSource("search-pois", {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] },
+  });
+  map.addLayer(searchPOIsCircle);
+  map.addLayer(searchPOIsIcons);
+  map.addLayer(searchPOIsLabels);
+}
+
+export { setUpMapLayers };
