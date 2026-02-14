@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import type { SeedItineraryItems } from "@/src/supabase/types";
 import { PlacePointResult } from "@/src/supabase/places";
 import { usePlacesSearch } from "@/src/hooks/usePlacesSearch";
-import { getCategoryConfig } from "@/src/map/scripts/category-config";
+import { getPOIConfig } from "@/src/map/scripts/poi-config";
 
 interface Props {
   item?: SeedItineraryItems;
@@ -157,14 +157,17 @@ export default function ActivityEditor({
           {showPOISearch && isOpen && results.length > 0 && (
             <div className="absolute top-full mt-1 left-0 right-0 bg-white rounded-lg border shadow-xl max-h-60 overflow-y-auto z-50">
               {results.slice(0, 10).map((place) => {
-                const config = getCategoryConfig(place.category_group);
+                const config = getPOIConfig(place.category);
                 return (
                   <button
                     key={place.id}
                     onClick={() => handleSelectPOI(place)}
                     className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left border-b last:border-0"
                   >
-                    <span className="text-sm">{config.emoji}</span>
+                    <span
+                      className="w-4 h-4 rounded-full shrink-0"
+                      style={{ backgroundColor: config.color }}
+                    />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-gray-900 truncate">
                         {place.name_en || place.name_default}

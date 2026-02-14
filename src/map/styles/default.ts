@@ -6,7 +6,6 @@ export const defaultMapStyleJSON: StyleSpecification = {
   sources: {
     terrasketch: mapSource,
   },
-  sprite: `https://www.terrasketch.com/sprites/emoji/sprites`,
   glyphs: "https://www.terrasketch.com/fonts/{fontstack}/{range}.pbf",
   layers: [
     {
@@ -3808,65 +3807,6 @@ export const defaultMapStyleJSON: StyleSpecification = {
         "text-halo-blur": 1,
       },
     },
-    {
-      id: "pois",
-      type: "symbol",
-      source: "terrasketch",
-      "source-layer": "pois",
-      filter: [
-        "all",
-        [
-          "in",
-          ["get", "kind"],
-          [
-            "literal",
-            [
-              "beach",
-              "forest",
-              "marina",
-              "park",
-              "peak",
-              "zoo",
-              "garden",
-              "bench",
-              "aerodrome",
-              "station",
-              "bus_stop",
-              "ferry_terminal",
-              "stadium",
-              "university",
-              "library",
-              "school",
-              "animal",
-              "toilets",
-              "drinking_water",
-            ],
-          ],
-        ],
-        [">=", ["zoom"], ["+", ["get", "min_zoom"], 0]],
-      ],
-      layout: {
-        "text-font": ["Noto Sans Regular"],
-        "text-field": [
-          "coalesce",
-          ["get", "name:en"],
-          ["get", "pgf:name"],
-          ["get", "name"],
-        ],
-        "text-size": ["interpolate", ["linear"], ["zoom"], 17, 10, 19, 16],
-        "text-max-width": 8,
-        "text-offset": [1.1, 0],
-        "text-variable-anchor": ["left", "right"],
-        "text-justify": "auto",
-        visibility: "visible",
-      },
-      paint: {
-        "text-halo-width": 2,
-        "text-halo-color": "#ffffff",
-        "text-color": "#6f6f6f",
-      },
-    },
-
     {
       id: "places_country",
       type: "symbol",

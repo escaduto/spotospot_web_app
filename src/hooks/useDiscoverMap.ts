@@ -4,13 +4,18 @@ import { Protocol, PMTiles } from "pmtiles";
 import { PMTILES_URL } from "../constants/paths";
 import { defaultMapStyleJSON } from "../map/styles/default";
 import {
-  loadCategoryIcons,
+  loadPOIIcons,
   addPOILayers,
   updatePOISource,
   updateHighlightSource,
-  POI_LAYER_ID,
+  POI_SOURCE_ID,
+  POI_CIRCLE_LAYER_ID,
+  POI_ICON_LAYER_ID,
   POI_CLUSTER_LAYER_ID,
-  POI_HIGHLIGHT_LAYER_ID,
+  POI_HIGHLIGHT_SOURCE_ID,
+  POI_HIGHLIGHT_CIRCLE_LAYER_ID,
+  POI_HIGHLIGHT_ICON_LAYER_ID,
+  INTERACTIVE_LAYERS,
 } from "../map/scripts/poi-layers";
 import {
   getPlacesInBounds,
@@ -70,6 +75,7 @@ export function useDiscoverMap() {
     if (zoom < 6) {
       updatePOISource(map, { type: "FeatureCollection", features: [] });
       setPOICount(0);
+      setLoadingPOIs(false);
       return;
     }
 
@@ -139,14 +145,14 @@ export function useDiscoverMap() {
       zoom: 11,
       attributionControl: false,
       minZoom: 2,
-      maxZoom: 18,
+      maxZoom: 22,
     });
 
     mapRef.current = map;
 
-    map.on("load", () => {
+    map.on("load", async () => {
       // ---- POI icons + layers ----
-      loadCategoryIcons(map);
+      await loadPOIIcons(map);
       addPOILayers(map);
 
       setMapLoaded(true);
@@ -155,6 +161,84 @@ export function useDiscoverMap() {
 
     // Viewport change → reload POIs
     map.on("moveend", handleViewportChange);
+
+    // ── Hover on POI circles / icons ──
+    const poiHoverLayers = [POI_CIRCLE_LAYER_ID, POI_ICON_LAYER_ID];
+    const highlightHoverLayers = [
+      POI_HIGHLIGHT_CIRCLE_LAYER_ID,
+      POI_HIGHLIGHT_ICON_LAYER_ID,
+    ];
+    let hoveredPOI: { source: string; id: number } | null = null;
+    let hoverPopup: maplibregl.Popup | null = null;
+
+    const clearHover = () => {
+      if (hoveredPOI) {
+        map.setFeatureState(
+          { source: hoveredPOI.source, id: hoveredPOI.id },
+          { hover: false },
+        );
+        hoveredPOI = null;
+      }
+      map.getCanvas().style.cursor = "";
+      hoverPopup?.remove();
+      hoverPopup = null;
+    };
+
+    const makeHoverHandler =
+      (sourceId: string) =>
+      (
+        e: maplibregl.MapMouseEvent & {
+          features?: maplibregl.MapGeoJSONFeature[];
+        },
+      ) => {
+        if (!e.features?.length) return;
+        const feat = e.features[0];
+        const fid = feat.id as number;
+        if (hoveredPOI?.id === fid && hoveredPOI?.source === sourceId) return;
+
+        clearHover();
+        hoveredPOI = { source: sourceId, id: fid };
+        map.setFeatureState({ source: sourceId, id: fid }, { hover: true });
+        map.getCanvas().style.cursor = "pointer";
+
+        const props = feat.properties!;
+        const location = [props.address, props.city].filter(Boolean).join(", ");
+        const html = `
+          <div class="poi-popup-card">
+            <div class="poi-popup-badge" style="color:${props.color}">
+              <span class="poi-popup-dot" style="background:${props.color}"></span>
+              ${props.categoryLabel}
+            </div>
+            <div class="poi-popup-name">${props.name}</div>
+            ${location ? `<div class="poi-popup-location">${location}</div>` : ""}
+          </div>
+        `;
+
+        const coords = (feat.geometry as GeoJSON.Point).coordinates.slice() as [
+          number,
+          number,
+        ];
+
+        hoverPopup = new maplibregl.Popup({
+          closeButton: false,
+          closeOnClick: false,
+          offset: 14,
+          anchor: "bottom",
+          className: "search-poi-popup",
+        })
+          .setLngLat(coords)
+          .setHTML(html)
+          .addTo(map);
+      };
+
+    for (const layer of poiHoverLayers) {
+      map.on("mousemove", layer, makeHoverHandler(POI_SOURCE_ID));
+      map.on("mouseleave", layer, clearHover);
+    }
+    for (const layer of highlightHoverLayers) {
+      map.on("mousemove", layer, makeHoverHandler(POI_HIGHLIGHT_SOURCE_ID));
+      map.on("mouseleave", layer, clearHover);
+    }
 
     // ---- Click handler for POIs ----
     const handlePOIClick = (e: maplibregl.MapLayerMouseEvent) => {
@@ -167,7 +251,7 @@ export function useDiscoverMap() {
       ];
 
       setSelectedPOI({
-        id: props.id,
+        id: props._placeId,
         name: props.name,
         name_default: props.name_default,
         category: props.category,
@@ -186,9 +270,10 @@ export function useDiscoverMap() {
       });
     };
 
-    // Click listeners for both regular and highlighted POIs
-    map.on("click", POI_LAYER_ID, handlePOIClick);
-    map.on("click", POI_HIGHLIGHT_LAYER_ID, handlePOIClick);
+    // Click listeners for POI + highlight layers
+    for (const layer of [...poiHoverLayers, ...highlightHoverLayers]) {
+      map.on("click", layer, handlePOIClick);
+    }
 
     // ---- Click: cluster → zoom in ----
     map.on("click", POI_CLUSTER_LAYER_ID, (e) => {
@@ -198,7 +283,7 @@ export function useDiscoverMap() {
       if (!features.length) return;
 
       const clusterId = features[0].properties!.cluster_id;
-      const source = map.getSource("poi-places") as maplibregl.GeoJSONSource;
+      const source = map.getSource(POI_SOURCE_ID) as maplibregl.GeoJSONSource;
 
       source.getClusterExpansionZoom(clusterId).then((zoom) => {
         map.easeTo({
@@ -214,20 +299,17 @@ export function useDiscoverMap() {
     // ---- Click: empty area → deselect ----
     map.on("click", (e) => {
       const hits = map.queryRenderedFeatures(e.point, {
-        layers: [POI_LAYER_ID, POI_CLUSTER_LAYER_ID, POI_HIGHLIGHT_LAYER_ID],
+        layers: INTERACTIVE_LAYERS,
       });
       if (hits.length === 0) setSelectedPOI(null);
     });
 
-    // ---- Cursor affordance ----
-    const layers = [POI_LAYER_ID, POI_CLUSTER_LAYER_ID, POI_HIGHLIGHT_LAYER_ID];
-    layers.forEach((layerId) => {
-      map.on("mouseenter", layerId, () => {
-        map.getCanvas().style.cursor = "pointer";
-      });
-      map.on("mouseleave", layerId, () => {
-        map.getCanvas().style.cursor = "";
-      });
+    // ---- Cursor affordance for clusters ----
+    map.on("mouseenter", POI_CLUSTER_LAYER_ID, () => {
+      map.getCanvas().style.cursor = "pointer";
+    });
+    map.on("mouseleave", POI_CLUSTER_LAYER_ID, () => {
+      map.getCanvas().style.cursor = "";
     });
 
     // ---- Controls ----
@@ -244,6 +326,7 @@ export function useDiscoverMap() {
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      hoverPopup?.remove();
       maplibregl.removeProtocol("pmtiles");
       map.remove();
       mapRef.current = null;

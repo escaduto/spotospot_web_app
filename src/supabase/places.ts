@@ -1,4 +1,5 @@
 import { createClient } from "./client";
+import { getPOIConfig } from "../map/scripts/poi-config";
 
 // -------------------------------------------------
 // Types
@@ -205,22 +206,26 @@ export function placesToGeoJSON(
   return {
     type: "FeatureCollection",
     features: places
-      .map((p) => {
-        const coords = { lat: p.lat, lng: p.lng };
-        if (!coords) return null;
+      .map((p, idx) => {
+        if (p.lat == null || p.lng == null) return null;
+        const cfg = getPOIConfig(p.category);
         return {
           type: "Feature" as const,
-          id: p.id,
+          id: idx, // numeric ID required for feature-state
           geometry: {
             type: "Point" as const,
-            coordinates: [coords.lng, coords.lat] as [number, number],
+            coordinates: [p.lng, p.lat] as [number, number],
           },
           properties: {
-            id: p.id,
+            _placeId: p.id,
             name: p.name_en || p.name_default,
             name_default: p.name_default,
             category: p.category,
             category_group: p.category_group || "other",
+            color: cfg.color,
+            bgColor: cfg.bgColor,
+            icon: cfg.icon,
+            categoryLabel: cfg.label,
             address: p.address,
             city: p.city,
             region: p.region,

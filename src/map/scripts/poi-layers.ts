@@ -1,156 +1,69 @@
 /**
- * POI layer & source management for MapLibre GL.
+ * POI layer & source management for MapLibre GL (Discover page).
  *
- * – Generates canvas-based category marker icons at runtime
- * – Adds a clustered GeoJSON source for POIs
- * – Configures cluster, icon, and label layers with
- *   popularity-based rendering priority (symbol-sort-key)
+ * Uses SDF PNG icons matching the DayDetailsMap approach:
+ *   circle (colored) + icon (white SDF) + label
+ * Includes a clustered source for viewport POIs and a
+ * non-clustered highlight source for search results.
  */
 
 import maplibregl from "maplibre-gl";
-import { CATEGORY_GROUPS, DEFAULT_CATEGORY } from "./category-config";
+import { poiCategoryList } from "./poi-config";
 
 // -------------------------------------------------
 // Layer / source IDs (exported for event binding)
 // -------------------------------------------------
 
 export const POI_SOURCE_ID = "poi-places";
-export const POI_LAYER_ID = "poi-points";
+export const POI_CIRCLE_LAYER_ID = "poi-circles";
+export const POI_ICON_LAYER_ID = "poi-icons";
 export const POI_LABEL_LAYER_ID = "poi-labels";
 export const POI_CLUSTER_LAYER_ID = "poi-clusters";
 export const POI_CLUSTER_COUNT_LAYER_ID = "poi-cluster-count";
+
 export const POI_HIGHLIGHT_SOURCE_ID = "poi-highlight";
-export const POI_HIGHLIGHT_LAYER_ID = "poi-highlight-points";
+export const POI_HIGHLIGHT_CIRCLE_LAYER_ID = "poi-highlight-circles";
+export const POI_HIGHLIGHT_ICON_LAYER_ID = "poi-highlight-icons";
+export const POI_HIGHLIGHT_LABEL_LAYER_ID = "poi-highlight-labels";
+
+/** Layers that respond to click / hover interactions */
+export const INTERACTIVE_LAYERS = [
+  POI_CIRCLE_LAYER_ID,
+  POI_ICON_LAYER_ID,
+  POI_CLUSTER_LAYER_ID,
+  POI_HIGHLIGHT_CIRCLE_LAYER_ID,
+  POI_HIGHLIGHT_ICON_LAYER_ID,
+];
 
 // -------------------------------------------------
-// Canvas marker helpers
+// Icon loading
 // -------------------------------------------------
 
-function createMarkerImage(
-  color: string,
-  emoji: string,
-  size: number = 28,
-): ImageData {
-  const canvas = document.createElement("canvas");
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = size * dpr;
-  canvas.height = size * dpr;
-  const ctx = canvas.getContext("2d")!;
-  ctx.scale(dpr, dpr);
-
-  // Subtle shadow
-  ctx.beginPath();
-  ctx.arc(size / 2, size / 2 + 0.5, size / 2 - 1, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(0,0,0,0.15)";
-  ctx.fill();
-
-  // Main circle with gradient-like effect
-  const gradient = ctx.createRadialGradient(
-    size / 2,
-    size / 2 - size * 0.15,
-    0,
-    size / 2,
-    size / 2,
-    size / 2 - 1
-  );
-  gradient.addColorStop(0, lightenColor(color, 0.15));
-  gradient.addColorStop(1, color);
-
-  ctx.beginPath();
-  ctx.arc(size / 2, size / 2, size / 2 - 1, 0, Math.PI * 2);
-  ctx.fillStyle = gradient;
-  ctx.fill();
-
-  // Subtle white border
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  // Emoji (slightly larger and better positioned)
-  ctx.font = `${size * 0.52}px "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-
-  // Add subtle shadow to emoji
-  ctx.shadowColor = "rgba(0, 0, 0, 0.2)";
-  ctx.shadowBlur = 1;
-  ctx.shadowOffsetY = 0.5;
-
-  ctx.fillText(emoji, size / 2, size / 2 + 0.5);
-
-  return ctx.getImageData(0, 0, canvas.width, canvas.height);
-}
-
-// Helper function to lighten a color
-function lightenColor(color: string, amount: number): string {
-  const hex = color.replace("#", "");
-  const r = Math.min(255, parseInt(hex.substring(0, 2), 16) + amount * 255);
-  const g = Math.min(255, parseInt(hex.substring(2, 4), 16) + amount * 255);
-  const b = Math.min(255, parseInt(hex.substring(4, 6), 16) + amount * 255);
-  return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
-}
-
-function createClusterImage(size: number = 40): ImageData {
-  const canvas = document.createElement("canvas");
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = size * dpr;
-  canvas.height = size * dpr;
-  const ctx = canvas.getContext("2d")!;
-  ctx.scale(dpr, dpr);
-
-  // Outer glow ring
-  ctx.beginPath();
-  ctx.arc(size / 2, size / 2, size / 2 - 1, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(20, 184, 166, 0.2)";
-  ctx.fill();
-
-  // Inner circle
-  ctx.beginPath();
-  ctx.arc(size / 2, size / 2, size / 2 - 6, 0, Math.PI * 2);
-  ctx.fillStyle = "#14B8A6";
-  ctx.fill();
-
-  return ctx.getImageData(0, 0, canvas.width, canvas.height);
-}
-
-// -------------------------------------------------
-// Public API
-// -------------------------------------------------
-
-/** Register all category marker images on the map */
-export function loadCategoryIcons(map: maplibregl.Map): void {
-  const pr = window.devicePixelRatio || 1;
-  const size = 28; // Smaller, more condensed
-
-  for (const [key, config] of Object.entries(CATEGORY_GROUPS)) {
-    const imageId = `poi-${key}`;
-    if (!map.hasImage(imageId)) {
-      map.addImage(
-        imageId,
-        createMarkerImage(config.color, config.emoji, size),
-        {
-          pixelRatio: pr,
-        },
-      );
+/** Load all category SDF icon PNGs onto the map (awaitable). */
+export async function loadPOIIcons(map: maplibregl.Map): Promise<void> {
+  const promises = poiCategoryList.map(async (icon) => {
+    if (map.hasImage(icon)) return;
+    try {
+      const img = await map.loadImage(`/icons/${icon}.png`);
+      if (!map.hasImage(icon)) {
+        map.addImage(icon, img.data, { sdf: true });
+      }
+    } catch (err) {
+      console.warn(`Failed to load POI icon: ${icon}`, err);
     }
-  }
-
-  if (!map.hasImage("poi-default")) {
-    map.addImage(
-      "poi-default",
-      createMarkerImage(DEFAULT_CATEGORY.color, DEFAULT_CATEGORY.emoji, size),
-      { pixelRatio: pr },
-    );
-  }
-
-  if (!map.hasImage("poi-cluster")) {
-    map.addImage("poi-cluster", createClusterImage(34), { pixelRatio: pr });
-  }
+  });
+  await Promise.all(promises);
 }
 
-/** Add the clustered GeoJSON source + all POI layers */
+// -------------------------------------------------
+// Sources & layers
+// -------------------------------------------------
+
+/** Add the clustered GeoJSON source + all POI layers. Safe to call multiple times. */
 export function addPOILayers(map: maplibregl.Map): void {
-  // Source – starts empty, updated via updatePOISource()
+  if (map.getSource(POI_SOURCE_ID)) return;
+
+  // ── Main POI source (clustered) ──
   map.addSource(POI_SOURCE_ID, {
     type: "geojson",
     data: { type: "FeatureCollection", features: [] },
@@ -159,13 +72,13 @@ export function addPOILayers(map: maplibregl.Map): void {
     clusterRadius: 50,
   });
 
-  // Highlight source for search results (no clustering)
+  // ── Highlight source for search results (no clustering) ──
   map.addSource(POI_HIGHLIGHT_SOURCE_ID, {
     type: "geojson",
     data: { type: "FeatureCollection", features: [] },
   });
 
-  // ---- Cluster circles ----
+  // ── Cluster circles ──
   map.addLayer({
     id: POI_CLUSTER_LAYER_ID,
     type: "circle",
@@ -187,7 +100,7 @@ export function addPOILayers(map: maplibregl.Map): void {
     },
   });
 
-  // ---- Cluster count labels ----
+  // ── Cluster count labels ──
   map.addLayer({
     id: POI_CLUSTER_COUNT_LAYER_ID,
     type: "symbol",
@@ -199,126 +112,147 @@ export function addPOILayers(map: maplibregl.Map): void {
       "text-size": 13,
       "text-allow-overlap": true,
     },
+    paint: { "text-color": "#FFFFFF" },
+  });
+
+  // ── Individual POI circles (colored by category) ──
+  map.addLayer({
+    id: POI_CIRCLE_LAYER_ID,
+    type: "circle",
+    source: POI_SOURCE_ID,
+    filter: ["!", ["has", "point_count"]],
     paint: {
-      "text-color": "#FFFFFF",
+      "circle-radius": [
+        "case",
+        ["boolean", ["feature-state", "hover"], false],
+        12,
+        10,
+      ],
+      "circle-color": ["get", "color"],
+      "circle-stroke-color": [
+        "case",
+        ["boolean", ["feature-state", "hover"], false],
+        ["get", "bgColor"],
+        "#ffffff",
+      ],
+      "circle-stroke-width": [
+        "case",
+        ["boolean", ["feature-state", "hover"], false],
+        3,
+        2,
+      ],
+      "circle-opacity": [
+        "case",
+        ["boolean", ["feature-state", "hover"], false],
+        1,
+        0.85,
+      ],
     },
   });
 
-  // ---- Individual POI markers ----
+  // ── Individual POI icons (white SDF on colored circle) ──
   map.addLayer({
-    id: POI_LAYER_ID,
+    id: POI_ICON_LAYER_ID,
     type: "symbol",
     source: POI_SOURCE_ID,
     filter: ["!", ["has", "point_count"]],
     layout: {
-      "icon-image": [
-        "coalesce",
-        ["image", ["concat", "poi-", ["get", "category_group"]]],
-        ["image", "poi-default"],
-      ],
-      "icon-size": [
-        "interpolate",
-        ["linear"],
-        ["zoom"],
-        8,
-        0.55,
-        11,
-        0.7,
-        14,
-        0.9,
-        17,
-        1.1,
-      ],
+      "icon-image": ["get", "icon"],
+      "icon-size": 0.5,
       "icon-allow-overlap": false,
-      "icon-padding": 2, // Reduced padding for more condensed feel
-      // Lower sort_key ⇒ rendered on top (higher popularity)
+      "icon-ignore-placement": true,
       "symbol-sort-key": ["get", "sort_key"],
-      // Show labels only at z ≥ 14 for less clutter
-      "text-field": ["step", ["zoom"], "", 14, ["get", "name"]],
-      "text-font": ["Noto Sans Medium"],
-      "text-size": ["interpolate", ["linear"], ["zoom"], 14, 9, 17, 11],
-      "text-offset": [0, 1.3],
+    },
+    paint: { "icon-color": "#ffffff" },
+  });
+
+  // ── Individual POI labels ──
+  map.addLayer({
+    id: POI_LABEL_LAYER_ID,
+    type: "symbol",
+    source: POI_SOURCE_ID,
+    filter: ["!", ["has", "point_count"]],
+    minzoom: 14,
+    layout: {
+      "text-field": ["get", "name"],
+      "text-size": 10,
+      "text-offset": [0, 1.5],
       "text-anchor": "top",
-      "text-optional": true,
-      "text-max-width": 10,
+      "text-allow-overlap": false,
+      "symbol-sort-key": ["get", "sort_key"],
     },
     paint: {
-      "text-color": "#1f2937",
-      "text-halo-color": "#FFFFFF",
-      "text-halo-width": 2,
-      "text-halo-blur": 0.5,
-      "icon-opacity": [
-        "interpolate",
-        ["linear"],
-        ["zoom"],
-        6,
-        0.6,
-        10,
-        0.85,
-        14,
-        1,
+      "text-color": [
+        "case",
+        ["boolean", ["feature-state", "hover"], false],
+        "#7c3aed",
+        "#5c5c5c",
       ],
+      "text-halo-color": "#ffffff",
+      "text-halo-width": 1.5,
     },
   });
 
-  // ---- Highlighted POI markers (search results) - rendered on top ----
+  // ── Highlighted POI circles ──
   map.addLayer({
-    id: POI_HIGHLIGHT_LAYER_ID,
+    id: POI_HIGHLIGHT_CIRCLE_LAYER_ID,
+    type: "circle",
+    source: POI_HIGHLIGHT_SOURCE_ID,
+    paint: {
+      "circle-radius": [
+        "case",
+        ["boolean", ["feature-state", "hover"], false],
+        16,
+        12,
+      ],
+      "circle-color": ["get", "color"],
+      "circle-stroke-color": ["get", "bgColor"],
+      "circle-stroke-width": 3,
+      "circle-opacity": 1,
+    },
+  });
+
+  // ── Highlighted POI icons ──
+  map.addLayer({
+    id: POI_HIGHLIGHT_ICON_LAYER_ID,
     type: "symbol",
     source: POI_HIGHLIGHT_SOURCE_ID,
     layout: {
-      "icon-image": [
-        "coalesce",
-        ["image", ["concat", "poi-", ["get", "category_group"]]],
-        ["image", "poi-default"],
-      ],
-      "icon-size": [
-        "interpolate",
-        ["linear"],
-        ["zoom"],
-        8,
-        0.9,
-        12,
-        1.25,
-        17,
-        1.5,
-      ],
+      "icon-image": ["get", "icon"],
+      "icon-size": 1,
       "icon-allow-overlap": true,
       "icon-ignore-placement": true,
-      // Always show labels for highlighted POIs
+    },
+    paint: { "icon-color": "#ffffff" },
+  });
+
+  // ── Highlighted POI labels (always shown) ──
+  map.addLayer({
+    id: POI_HIGHLIGHT_LABEL_LAYER_ID,
+    type: "symbol",
+    source: POI_HIGHLIGHT_SOURCE_ID,
+    layout: {
       "text-field": ["get", "name"],
-      "text-font": ["Noto Sans Bold"],
-      "text-size": ["interpolate", ["linear"], ["zoom"], 10, 12, 17, 15],
-      "text-offset": [0, 1.6],
+      "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
+      "text-size": 12,
+      "text-offset": [0, 1.8],
       "text-anchor": "top",
-      "text-optional": false,
-      "text-max-width": 12,
-      "symbol-sort-key": -1000, // Always render on top
+      "text-allow-overlap": true,
+      "text-ignore-placement": true,
     },
     paint: {
       "text-color": "#0D9488",
-      "text-halo-color": "#FFFFFF",
-      "text-halo-width": 2.5,
-      "text-halo-blur": 0.5,
-      "icon-opacity": 1,
+      "text-halo-color": "#ffffff",
+      "text-halo-width": 2,
     },
   });
 }
 
-/** Update highlighted POI source with search results */
-export function updateHighlightSource(
-  map: maplibregl.Map,
-  geojson: GeoJSON.FeatureCollection<GeoJSON.Point>,
-): void {
-  const source = map.getSource(POI_HIGHLIGHT_SOURCE_ID) as
-    | maplibregl.GeoJSONSource
-    | undefined;
-  if (source) {
-    source.setData(geojson);
-  }
-}
+// -------------------------------------------------
+// Data helpers
+// -------------------------------------------------
 
-/** Replace the POI source data with a new FeatureCollection */
+/** Replace the main POI source data */
 export function updatePOISource(
   map: maplibregl.Map,
   geojson: GeoJSON.FeatureCollection<GeoJSON.Point>,
@@ -326,7 +260,16 @@ export function updatePOISource(
   const source = map.getSource(POI_SOURCE_ID) as
     | maplibregl.GeoJSONSource
     | undefined;
-  if (source) {
-    source.setData(geojson);
-  }
+  if (source) source.setData(geojson);
+}
+
+/** Replace highlighted POI source data (search results) */
+export function updateHighlightSource(
+  map: maplibregl.Map,
+  geojson: GeoJSON.FeatureCollection<GeoJSON.Point>,
+): void {
+  const source = map.getSource(POI_HIGHLIGHT_SOURCE_ID) as
+    | maplibregl.GeoJSONSource
+    | undefined;
+  if (source) source.setData(geojson);
 }

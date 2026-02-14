@@ -1,6 +1,9 @@
 "use client";
 
-import { getCategoryConfig } from "@/src/map/scripts/category-config";
+import {
+  getPOIConfig,
+  getCategoryGroupConfig,
+} from "@/src/map/scripts/poi-config";
 import type { SelectedPOI } from "@/src/hooks/useDiscoverMap";
 
 interface POIPopupProps {
@@ -9,7 +12,9 @@ interface POIPopupProps {
 }
 
 export default function POIPopup({ poi, onClose }: POIPopupProps) {
-  const config = getCategoryConfig(poi.category_group);
+  const config = poi.category
+    ? getPOIConfig(poi.category)
+    : getCategoryGroupConfig(poi.category_group);
 
   const location = [poi.city, poi.region, poi.country]
     .filter(Boolean)
@@ -33,8 +38,11 @@ export default function POIPopup({ poi, onClose }: POIPopupProps) {
           style={{ backgroundColor: config.bgColor }}
         >
           <div className="flex items-start gap-2 min-w-0 flex-1">
-            <span className="text-xl leading-none mt-0.5 shrink-0">
-              {config.emoji}
+            <span
+              className="w-7 h-7 rounded-full shrink-0 mt-0.5 flex items-center justify-center"
+              style={{ backgroundColor: config.color }}
+            >
+              <span className="text-xs text-white font-bold">●</span>
             </span>
             <div className="min-w-0">
               <h3 className="font-semibold text-gray-900 text-sm leading-snug line-clamp-2">

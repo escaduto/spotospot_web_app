@@ -10,19 +10,6 @@ export interface CategoryConfig {
   icon?: string;
 }
 
-export const poiCategoryList = [
-  "restaurant",
-  "hotel",
-  "attraction",
-  "art-gallery",
-  "park-alt1",
-  "shop",
-  "bar",
-  "soccer",
-  "bus",
-  "town-hall",
-] as const;
-
 export const CATEGORY_GROUPS: Record<string, CategoryConfig> = {
   food_and_drink: {
     label: "Food & Drink",
@@ -34,7 +21,7 @@ export const CATEGORY_GROUPS: Record<string, CategoryConfig> = {
     label: "Accommodation",
     color: "#3498DB",
     bgColor: "#EBF5FB",
-    icon: "hotel",
+    icon: "lodging",
   },
   tourism_and_attractions: {
     label: "Tourism",

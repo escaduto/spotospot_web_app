@@ -2,7 +2,7 @@
 
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useDiscoverMap } from "@/src/hooks/useDiscoverMap";
-import { CATEGORY_GROUPS } from "@/src/map/scripts/category-config";
+import { CATEGORY_GROUP_CONFIG } from "@/src/map/scripts/poi-config";
 import SearchBar from "./SearchBar";
 import POIPopup from "./POIPopup";
 
@@ -80,7 +80,8 @@ export default function DiscoverMap() {
             >
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
-            Clear {highlightedCount} highlighted result{highlightedCount !== 1 ? 's' : ''}
+            Clear {highlightedCount} highlighted result
+            {highlightedCount !== 1 ? "s" : ""}
           </button>
         </div>
       )}
@@ -93,9 +94,12 @@ export default function DiscoverMap() {
               Categories
             </p>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-              {Object.entries(CATEGORY_GROUPS).map(([key, config]) => (
+              {Object.entries(CATEGORY_GROUP_CONFIG).map(([key, config]) => (
                 <div key={key} className="flex items-center gap-1.5">
-                  <span className="text-xs leading-none">{config.emoji}</span>
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: config.color }}
+                  />
                   <span className="text-[10px] text-gray-600 whitespace-nowrap">
                     {config.label}
                   </span>

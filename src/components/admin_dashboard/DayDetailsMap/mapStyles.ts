@@ -88,7 +88,7 @@ export const searchPOIsCircle: maplibregl.LayerSpecification = {
       "case",
       ["boolean", ["feature-state", "hover"], false],
       14,
-      10,
+      12,
     ],
     "circle-color": ["get", "color"],
     "circle-stroke-color": [
@@ -118,7 +118,7 @@ export const searchPOIsIcons: maplibregl.LayerSpecification = {
   source: "search-pois",
   layout: {
     "icon-image": ["get", "icon"],
-    "icon-size": 0.8,
+    "icon-size": 0.6,
     "icon-allow-overlap": false,
     "icon-ignore-placement": true,
     "symbol-sort-key": ["get", "sortKey"],

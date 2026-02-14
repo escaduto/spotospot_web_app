@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import maplibregl, { GeoJSONSource } from "maplibre-gl";
-import { getCategoryConfig } from "@/src/map/scripts/category-config";
 import type { PlacePointResult } from "@/src/supabase/places";
+import { getPOIConfig } from "@/src/map/scripts/poi-config";
 
 interface UseSearchPOILayersArgs {
   mapRef: React.RefObject<maplibregl.Map | null>;
@@ -41,7 +41,7 @@ export function useSearchPOILayers({
       searchPOIs
         ?.filter((p) => p.lat != null && p.lng != null)
         .map((p, idx) => {
-          const cfg = getCategoryConfig(p.category_group);
+          const cfg = getPOIConfig(p.category);
           return {
             type: "Feature" as const,
             id: idx,

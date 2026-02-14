@@ -135,7 +135,7 @@ export default function RouteSegment({
                         }}
                         className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 flex items-center gap-2"
                       >
-                        <span>{t.emoji}</span>
+                        <span>{getSingleTransportConfig(t.value).emoji}</span>
                         <span>{t.label}</span>
                       </button>
                     ))}
@@ -153,7 +153,7 @@ export default function RouteSegment({
                 />
               )}
               <span style={{ color: config.color }} className="font-medium">
-                {config.emoji}
+                {config.emoji} {config.label}
               </span>
               {distLabel} · {durLabel}
             </span>

@@ -3,13 +3,6 @@ import maplibregl from "maplibre-gl";
 import { Protocol, PMTiles } from "pmtiles";
 import { PMTILES_URL } from "../constants/paths";
 import { defaultMapStyleJSON } from "../map/styles/default";
-import {
-  loadCategoryIcons,
-  addPOILayers,
-  POI_LAYER_ID,
-  POI_CLUSTER_LAYER_ID,
-  POI_HIGHLIGHT_LAYER_ID,
-} from "../map/scripts/poi-layers";
 
 export interface BaseMapOptions {
   initialCenter?: [number, number];
@@ -58,8 +51,6 @@ export function useBaseMap(options: BaseMapOptions = {}) {
     mapRef.current = map;
 
     map.on("load", () => {
-      loadCategoryIcons(map);
-      addPOILayers(map);
       setMapLoaded(true);
       onMapLoad?.(map);
     });
@@ -81,17 +72,6 @@ export function useBaseMap(options: BaseMapOptions = {}) {
       new maplibregl.NavigationControl({ showCompass: false }),
       "bottom-right",
     );
-
-    // Cursor affordance for POI layers
-    const layers = [POI_LAYER_ID, POI_CLUSTER_LAYER_ID, POI_HIGHLIGHT_LAYER_ID];
-    layers.forEach((layerId) => {
-      map.on("mouseenter", layerId, () => {
-        map.getCanvas().style.cursor = "pointer";
-      });
-      map.on("mouseleave", layerId, () => {
-        map.getCanvas().style.cursor = "";
-      });
-    });
 
     return () => {
       maplibregl.removeProtocol("pmtiles");

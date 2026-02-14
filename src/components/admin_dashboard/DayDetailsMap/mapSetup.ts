@@ -1,4 +1,4 @@
-import { poiCategoryList } from "@/src/map/scripts/category-config";
+import { poiCategoryList } from "@/src/map/scripts/poi-config";
 import {
   activitiesCircle,
   activitiesLabel,
@@ -9,7 +9,6 @@ import {
   routeBadgeBg,
   routeBadge,
 } from "./mapStyles";
-import { transportIconsList } from "@/src/map/scripts/transport-config";
 
 /**
  * Registers all GeoJSON sources and their layers once the map is loaded.
@@ -23,13 +22,6 @@ function setUpMapLayers(map: maplibregl.Map) {
     if (map.hasImage(category)) return;
     const image = await map.loadImage(`/icons/${category}.png`);
     map.addImage(category, image.data, { sdf: true });
-  });
-
-  // ── Icon images for transport markers ──
-  transportIconsList.forEach(async (icon) => {
-    if (map.hasImage(icon)) return;
-    const image = await map.loadImage(`/icons/${icon}.png`);
-    map.addImage(icon, image.data, { sdf: true });
   });
 
   // ── Routes source (lines rendered below points) ──

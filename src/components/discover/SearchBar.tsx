@@ -2,7 +2,10 @@
 
 import { useEffect, useRef } from "react";
 import { usePlacesSearch } from "@/src/hooks/usePlacesSearch";
-import { getCategoryConfig } from "@/src/map/scripts/category-config";
+import {
+  getPOIConfig,
+  getCategoryGroupConfig,
+} from "@/src/map/scripts/poi-config";
 import type { PlacePointResult } from "@/src/supabase/places";
 
 interface SearchBarProps {
@@ -128,14 +131,21 @@ export default function SearchBar({
           {/* Individual results */}
           <div className="overflow-y-auto max-h-80">
             {results.map((place) => {
-              const config = getCategoryConfig(place.category_group);
+              const config = place.category
+                ? getPOIConfig(place.category)
+                : getCategoryGroupConfig(place.category_group);
               return (
                 <button
                   key={place.id}
                   onClick={() => handleSelect(place)}
                   className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors text-left border-b border-gray-50 last:border-0"
                 >
-                  <span className="text-lg shrink-0">{config.emoji}</span>
+                  <span
+                    className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center"
+                    style={{ backgroundColor: config.color }}
+                  >
+                    <span className="text-[10px] text-white">●</span>
+                  </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-gray-900 truncate">
                       {place.name_en || place.name_default}
