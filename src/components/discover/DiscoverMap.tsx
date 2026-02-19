@@ -12,8 +12,7 @@ export default function DiscoverMap() {
     mapLoaded,
     selectedPOI,
     closePOI,
-    poiCount,
-    loadingPOIs,
+    loadingPOI,
     flyTo,
     mapCenter,
     highlightPlaces,
@@ -43,20 +42,11 @@ export default function DiscoverMap() {
       </div>
 
       {/* ---- Loading indicator ---- */}
-      {loadingPOIs && (
+      {loadingPOI && (
         <div className="absolute top-18 left-1/2 -translate-x-1/2 z-10">
           <div className="bg-white/90 backdrop-blur-sm rounded-full px-3 py-1.5 text-xs text-gray-500 shadow-sm flex items-center gap-2">
             <div className="w-3 h-3 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
-            Loading places…
-          </div>
-        </div>
-      )}
-
-      {/* ---- POI count badge ---- */}
-      {mapLoaded && !loadingPOIs && poiCount > 0 && (
-        <div className="absolute bottom-6 left-4 z-10">
-          <div className="bg-white/90 backdrop-blur-sm rounded-full px-3 py-1.5 text-xs text-gray-600 shadow-sm">
-            📍 {poiCount.toLocaleString()} places in view
+            Loading details…
           </div>
         </div>
       )}

@@ -105,6 +105,10 @@ export interface ItineraryDay {
   country: string | null;
   rep_point: string | null; // PostGIS geometry string (hex WKB or WKT)
   description: string | null;
+
+  category_type: string[] | null; // e.g. ["cultural", "outdoors", "food_and_drink"]
+  destination_key: string | null; // e.g. "from top destinations
+
   image_url: string | null;
   image_blurhash: string | null;
   image_properties: Record<string, string> | null; // e.g. { photographer: "John Doe", photographer_url: "", alt_text: "" }
@@ -116,6 +120,8 @@ export interface ItineraryDay {
   notes: string | null;
   created_at: string;
   updated_at: string;
+
+  metadata: Record<string, string | number> | null; // e.g. { "weather_forecast": "sunny", "local_events": 3 }
 }
 
 export type TransportationType =
@@ -137,6 +143,7 @@ export type TransportationType =
 export interface ItineraryItem {
   id: string;
   itinerary_day_id: string;
+  place_id: string | null; // references Places table for POI details
   title: string;
   description: string | null;
   item_type: string;
@@ -152,7 +159,6 @@ export interface ItineraryItem {
   booking_confirmation: string | null;
   notes: string | null;
   order_index: number;
-  transportation_type: TransportationType | null; // e.g. "flight", "train", "car_rental"
   route_to_next_geometry: Record<string, string | number> | null; // e.g. GeoJSON LineString for route to next item
   route_to_next_distance_m: number | null; // in meters
   route_to_next_duration_s: number | null; // in seconds
@@ -264,66 +270,9 @@ export interface PlacesDetails {
   updated_at: string;
 }
 
-export interface SeedItineraryDays {
-  id: string;
-
-  // basic info
-  title: string;
-  city: string | null;
-  country: string | null;
-  description: string | null;
-  rep_point: { lat: number; lng: number } | null;
-
-  // images
-  image_url: string | null;
-  image_blurhash: string | null;
-  image_properties: Record<string, string> | null; // e.g. { photographer: "John Doe", photographer_url: "", alt_text: "" }
-
-  // categorzation
-  category_type: string | null; // e.g. "sightseeing", "food_and_drink", "outdoors"
-  destination_key: string | null; // e.g. "paris", "new_york", "tokyo"
-  notes: string | null;
-
-  approval_status: "approved" | "pending" | "rejected";
-  approved_by: string | null; // user_id of approver
-  approved_at: string | null;
-  metadata: Record<string, string | number> | null; // e.g. { "mood": "relaxing", "energy_level": "high" }
-
-  created_by: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface SeedItineraryItems {
-  id: string;
-  seed_itinerary_day_id: string;
-
-  title: string;
-  item_type: string;
-  description: string | null;
-
-  location_name: string | null;
-  location_address: string | null;
-  coords: string | null; // PostGIS geometry string (hex WKB or WKT)
-  place_id: string | null; // e.g. Google Place ID, Foursquare Venue ID
-
-  order_index: number;
-  start_time: string | null;
-  end_time: string | null;
-  duration_minutes: number | null;
-
-  cost_estimate: number | null;
-  currency: string | null; // ISO 4217 code (e.g. "USD")
-
-  transportation_type: TransportationType[]; // e.g. "flight", "train", "car_rental"
-
-  notes: string | null;
-}
-
 export interface itinerary_item_routes {
   id: string;
   itinerary_day_id?: string | null;
-  seed_itinerary_day_id?: string | null;
   from_item_id: string | null;
   to_item_id: string;
   transportation_type: TransportationType[]; // e.g. "walking", "driving", "flight"
@@ -337,7 +286,6 @@ type RecalcStatus = "pending" | "processing" | "completed" | "failed";
 export interface RouteRecalculationQueue {
   id: string;
   itinerary_day_id: string | null;
-  seed_itinerary_day_id: string | null;
   route_id: string;
   status: RecalcStatus;
   created_at: string;

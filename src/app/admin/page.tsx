@@ -5,13 +5,13 @@ import FilterBar from "@/src/components/admin_dashboard/FilterBar";
 import ListView from "@/src/components/admin_dashboard/ListView";
 import MapView from "@/src/components/admin_dashboard/MapView";
 import { useAdminData } from "@/src/hooks/useAdminData";
-import type { SeedItineraryDays } from "@/src/supabase/types";
+import type { ItineraryDay } from "@/src/supabase/types";
 import { createClient } from "@/src/supabase/client";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export type Filters = {
-  status: "pending" | "approved" | "rejected" | "all";
+  status: "private" | "public" | "all";
   city: string;
   country: string;
   search: string;
@@ -24,7 +24,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"list" | "map">("list");
   const [filters, setFilters] = useState<Filters>({
-    status: "pending",
+    status: "private",
     city: "",
     country: "",
     search: "",
@@ -51,7 +51,7 @@ export default function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSelectDay = (day: SeedItineraryDays) => {
+  const handleSelectDay = (day: ItineraryDay) => {
     // Navigate to dedicated day details page
     router.push(`/admin/day/${day.id}`);
   };
@@ -112,7 +112,6 @@ export default function AdminPage() {
           <MapView days={days} items={items} onSelectDay={handleSelectDay} />
         )}
       </main>
-
     </div>
   );
 }

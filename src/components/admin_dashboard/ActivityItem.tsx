@@ -1,11 +1,11 @@
 "use client";
 
 import { useRef } from "react";
-import type { SeedItineraryItems } from "@/src/supabase/types";
+import type { ItineraryItem } from "@/src/supabase/types";
 import { parsePoint } from "@/src/utils/geo";
 
 interface Props {
-  item: SeedItineraryItems;
+  item: ItineraryItem;
   index: number;
   isSelected: boolean;
   onSelect: () => void;
@@ -31,7 +31,7 @@ export default function ActivityItem({
   isDragOver,
   isDragging,
 }: Props) {
-  const coords = parsePoint(item.coords);
+  const coords = parsePoint(item.location_coords);
   const dragHandleRef = useRef<HTMLSpanElement>(null);
 
   return (

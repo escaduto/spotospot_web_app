@@ -3,10 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { createClient } from "@/src/supabase/client";
-import type {
-  SeedItineraryDays,
-  SeedItineraryItems,
-} from "@/src/supabase/types";
+import type { ItineraryDay, ItineraryItem } from "@/src/supabase/types";
 import type { Filters } from "@/src/app/admin/page";
 import { toGeoPoint } from "@/src/utils/geo";
 
@@ -24,24 +21,24 @@ export interface AdminStats {
 
 export function useAdminData(filters: Filters) {
   const supabase = createClient();
-  const [allDays, setAllDays] = useState<SeedItineraryDays[]>([]);
-  const [allItems, setAllItems] = useState<SeedItineraryItems[]>([]);
+  const [allDays, setAllDays] = useState<ItineraryDay[]>([]);
+  const [allItems, setAllItems] = useState<ItineraryItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     const [{ data: daysData }, { data: itemsData }] = await Promise.all([
       supabase
-        .from("seed_itinerary_days")
+        .from("itinerary_days")
         .select("*")
         .order("created_at", { ascending: false }),
       supabase
-        .from("seed_itinerary_items")
-        .select("*")
+        .from("itinerary_items")
+        .select("*, location_coords::text")
         .order("order_index", { ascending: true }),
     ]);
-    setAllDays((daysData as SeedItineraryDays[]) ?? []);
-    setAllItems((itemsData as SeedItineraryItems[]) ?? []);
+    setAllDays((daysData as ItineraryDay[]) ?? []);
+    setAllItems((itemsData as ItineraryItem[]) ?? []);
     setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -51,9 +48,9 @@ export function useAdminData(filters: Filters) {
   }, [fetchData]);
 
   const stats: AdminStats = useMemo(() => {
-    const pending = allDays.filter((d) => d.approval_status === "pending");
-    const approved = allDays.filter((d) => d.approval_status === "approved");
-    const rejected = allDays.filter((d) => d.approval_status === "rejected");
+    const pending = allDays.filter((d) => d.visibility === "private");
+    const approved = allDays.filter((d) => d.visibility === "public");
+    const rejected = allDays.filter((d) => d.visibility === "private");
     const withImage = allDays.filter((d) => !!d.image_url);
     const cities = new Set(allDays.map((d) => d.city).filter(Boolean));
     const countries = new Set(allDays.map((d) => d.country).filter(Boolean));
@@ -86,7 +83,7 @@ export function useAdminData(filters: Filters) {
   const days = useMemo(() => {
     return allDays.filter((d) => {
       // Only filter by status if not 'all'
-      if (filters.status !== "all" && d.approval_status !== filters.status)
+      if (filters.status !== "all" && d.visibility !== filters.status)
         return false;
       if (filters.city && d.city !== filters.city) return false;
       if (filters.country && d.country !== filters.country) return false;
@@ -103,11 +100,11 @@ export function useAdminData(filters: Filters) {
 
   const items = useMemo(() => {
     const dayIds = new Set(days.map((d) => d.id));
-    return allItems.filter((i) => dayIds.has(i.seed_itinerary_day_id));
+    return allItems.filter((i) => dayIds.has(i.itinerary_day_id));
   }, [allItems, days]);
 
   /** Convert any { lat, lng } point fields to GeoJSON before sending to DB */
-  const prepareDayPayload = (updates: Partial<SeedItineraryDays>) => {
+  const prepareDayPayload = (updates: Partial<ItineraryDay>) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payload: Record<string, any> = { ...updates };
     if ("rep_point" in payload) {
@@ -116,7 +113,7 @@ export function useAdminData(filters: Filters) {
     return payload;
   };
 
-  const prepareItemPayload = (updates: Partial<SeedItineraryItems>) => {
+  const prepareItemPayload = (updates: Partial<ItineraryItem>) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payload: Record<string, any> = { ...updates };
     if ("coords" in payload) {
@@ -130,7 +127,7 @@ export function useAdminData(filters: Filters) {
       data: { user },
     } = await supabase.auth.getUser();
     const { error } = await supabase
-      .from("seed_itinerary_days")
+      .from("itinerary_days")
       .update({
         approval_status: "approved",
         approved_by: user?.id ?? null,
@@ -145,8 +142,8 @@ export function useAdminData(filters: Filters) {
 
   const rejectDay = async (dayId: string) => {
     const { error } = await supabase
-      .from("seed_itinerary_days")
-      .update({ approval_status: "rejected" })
+      .from("itinerary_days")
+      .update({ visibility: "private" })
       .eq("id", dayId);
     if (error) {
       console.error("rejectDay error:", error);
@@ -154,12 +151,9 @@ export function useAdminData(filters: Filters) {
     }
   };
 
-  const updateDay = async (
-    dayId: string,
-    updates: Partial<SeedItineraryDays>,
-  ) => {
+  const updateDay = async (dayId: string, updates: Partial<ItineraryDay>) => {
     const { error } = await supabase
-      .from("seed_itinerary_days")
+      .from("itinerary_days")
       .update(prepareDayPayload(updates))
       .eq("id", dayId);
     if (error) {
@@ -170,10 +164,10 @@ export function useAdminData(filters: Filters) {
 
   const updateItem = async (
     itemId: string,
-    updates: Partial<SeedItineraryItems>,
+    updates: Partial<ItineraryItem>,
   ) => {
     const { error } = await supabase
-      .from("seed_itinerary_items")
+      .from("itinerary_items")
       .update(prepareItemPayload(updates))
       .eq("id", itemId);
     if (error) {
@@ -182,9 +176,9 @@ export function useAdminData(filters: Filters) {
     }
   };
 
-  const addItem = async (item: Omit<SeedItineraryItems, "id">) => {
+  const addItem = async (item: Omit<ItineraryItem, "id">) => {
     const { error } = await supabase
-      .from("seed_itinerary_items")
+      .from("itinerary_items")
       .insert(prepareItemPayload(item));
     if (error) {
       console.error("addItem error:", error);
@@ -194,7 +188,7 @@ export function useAdminData(filters: Filters) {
 
   const deleteItem = async (itemId: string) => {
     const { error } = await supabase
-      .from("seed_itinerary_items")
+      .from("itinerary_items")
       .delete()
       .eq("id", itemId);
     if (error) {

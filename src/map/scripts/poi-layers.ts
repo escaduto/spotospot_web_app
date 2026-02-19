@@ -8,17 +8,16 @@
  */
 
 import maplibregl from "maplibre-gl";
-import { poiCategoryList } from "./poi-config";
+import { poiCategoryList, POI_GROUPS } from "./poi-config";
+import { PLACES_PMTILES_URL } from "@/src/constants/paths";
 
 // -------------------------------------------------
 // Layer / source IDs (exported for event binding)
 // -------------------------------------------------
 
 export const POI_SOURCE_ID = "poi-places";
-export const POI_CIRCLE_LAYER_ID = "poi-circles";
 export const POI_ICON_LAYER_ID = "poi-icons";
 export const POI_LABEL_LAYER_ID = "poi-labels";
-export const POI_CLUSTER_LAYER_ID = "poi-clusters";
 export const POI_CLUSTER_COUNT_LAYER_ID = "poi-cluster-count";
 
 export const POI_HIGHLIGHT_SOURCE_ID = "poi-highlight";
@@ -28,9 +27,7 @@ export const POI_HIGHLIGHT_LABEL_LAYER_ID = "poi-highlight-labels";
 
 /** Layers that respond to click / hover interactions */
 export const INTERACTIVE_LAYERS = [
-  POI_CIRCLE_LAYER_ID,
   POI_ICON_LAYER_ID,
-  POI_CLUSTER_LAYER_ID,
   POI_HIGHLIGHT_CIRCLE_LAYER_ID,
   POI_HIGHLIGHT_ICON_LAYER_ID,
 ];
@@ -39,6 +36,26 @@ export const INTERACTIVE_LAYERS = [
 // Icon loading
 // -------------------------------------------------
 
+/**
+ * Build a MapLibre "match" expression: category → icon image name.
+ * Falls back to "marker" for unknown categories.
+ */
+function buildCategoryIconExpr(): maplibregl.ExpressionSpecification {
+  const entries: string[] = [];
+  const seen = new Set<string>();
+  for (const [cat, cfg] of Object.entries(POI_GROUPS)) {
+    if (seen.has(cat)) continue;
+    seen.add(cat);
+    entries.push(cat, cfg.icon);
+  }
+  return [
+    "match",
+    ["get", "category"],
+    ...entries,
+    "marker",
+  ] as unknown as maplibregl.ExpressionSpecification;
+}
+
 /** Load all category SDF icon PNGs onto the map (awaitable). */
 export async function loadPOIIcons(map: maplibregl.Map): Promise<void> {
   const promises = poiCategoryList.map(async (icon) => {
@@ -46,7 +63,7 @@ export async function loadPOIIcons(map: maplibregl.Map): Promise<void> {
     try {
       const img = await map.loadImage(`/icons/${icon}.png`);
       if (!map.hasImage(icon)) {
-        map.addImage(icon, img.data, { sdf: true });
+        map.addImage(icon, img.data);
       }
     } catch (err) {
       console.warn(`Failed to load POI icon: ${icon}`, err);
@@ -63,13 +80,11 @@ export async function loadPOIIcons(map: maplibregl.Map): Promise<void> {
 export function addPOILayers(map: maplibregl.Map): void {
   if (map.getSource(POI_SOURCE_ID)) return;
 
-  // ── Main POI source (clustered) ──
   map.addSource(POI_SOURCE_ID, {
-    type: "geojson",
-    data: { type: "FeatureCollection", features: [] },
-    cluster: true,
-    clusterMaxZoom: 13,
-    clusterRadius: 50,
+    type: "vector",
+    tiles: [PLACES_PMTILES_URL],
+    minzoom: 0,
+    maxzoom: 14,
   });
 
   // ── Highlight source for search results (no clustering) ──
@@ -78,109 +93,80 @@ export function addPOILayers(map: maplibregl.Map): void {
     data: { type: "FeatureCollection", features: [] },
   });
 
-  // ── Cluster circles ──
-  map.addLayer({
-    id: POI_CLUSTER_LAYER_ID,
-    type: "circle",
-    source: POI_SOURCE_ID,
-    filter: ["has", "point_count"],
-    paint: {
-      "circle-color": [
-        "step",
-        ["get", "point_count"],
-        "#14B8A6",
-        20,
-        "#0D9488",
-        50,
-        "#0F766E",
-      ],
-      "circle-radius": ["step", ["get", "point_count"], 18, 20, 24, 50, 30],
-      "circle-stroke-width": 3,
-      "circle-stroke-color": "rgba(20, 184, 166, 0.25)",
-    },
-  });
-
-  // ── Cluster count labels ──
-  map.addLayer({
-    id: POI_CLUSTER_COUNT_LAYER_ID,
-    type: "symbol",
-    source: POI_SOURCE_ID,
-    filter: ["has", "point_count"],
-    layout: {
-      "text-field": "{point_count_abbreviated}",
-      "text-font": ["Noto Sans Regular"],
-      "text-size": 13,
-      "text-allow-overlap": true,
-    },
-    paint: { "text-color": "#FFFFFF" },
-  });
-
-  // ── Individual POI circles (colored by category) ──
-  map.addLayer({
-    id: POI_CIRCLE_LAYER_ID,
-    type: "circle",
-    source: POI_SOURCE_ID,
-    filter: ["!", ["has", "point_count"]],
-    paint: {
-      "circle-radius": [
-        "case",
-        ["boolean", ["feature-state", "hover"], false],
-        12,
-        10,
-      ],
-      "circle-color": ["get", "color"],
-      "circle-stroke-color": [
-        "case",
-        ["boolean", ["feature-state", "hover"], false],
-        ["get", "bgColor"],
-        "#ffffff",
-      ],
-      "circle-stroke-width": [
-        "case",
-        ["boolean", ["feature-state", "hover"], false],
-        3,
-        2,
-      ],
-      "circle-opacity": [
-        "case",
-        ["boolean", ["feature-state", "hover"], false],
-        1,
-        0.85,
-      ],
-    },
-  });
-
-  // ── Individual POI icons (white SDF on colored circle) ──
+  // ── Individual POI icons (pre-baked colored circle PNGs from convert-icons) ──
   map.addLayer({
     id: POI_ICON_LAYER_ID,
     type: "symbol",
     source: POI_SOURCE_ID,
-    filter: ["!", ["has", "point_count"]],
+    "source-layer": "places",
     layout: {
-      "icon-image": ["get", "icon"],
-      "icon-size": 0.5,
+      visibility: "visible",
+      "icon-image": buildCategoryIconExpr(),
+      "icon-size": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        10,
+        0.3,
+        14,
+        0.4,
+        18,
+        0.5,
+      ],
       "icon-allow-overlap": false,
-      "icon-ignore-placement": true,
-      "symbol-sort-key": ["get", "sort_key"],
-    },
-    paint: { "icon-color": "#ffffff" },
-  });
-
-  // ── Individual POI labels ──
-  map.addLayer({
-    id: POI_LABEL_LAYER_ID,
-    type: "symbol",
-    source: POI_SOURCE_ID,
-    filter: ["!", ["has", "point_count"]],
-    minzoom: 14,
-    layout: {
-      "text-field": ["get", "name"],
+      "icon-ignore-placement": false,
+      "icon-padding": 2,
+      "symbol-sort-key": [
+        "-",
+        100,
+        ["coalesce", ["get", "importance_score"], 0],
+      ],
+      "text-field": ["step", ["zoom"], "", 12, ["get", "name"]],
+      "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
       "text-size": 10,
-      "text-offset": [0, 1.5],
+      "text-offset": [0, 1.8],
       "text-anchor": "top",
       "text-allow-overlap": false,
-      "symbol-sort-key": ["get", "sort_key"],
+      "text-optional": true,
     },
+    filter: [
+      "any",
+      [
+        "all",
+        ["<", ["zoom"], 12],
+        [">=", ["coalesce", ["get", "importance_score"], 0], 0.98],
+      ],
+      // zoom 12-12.99 → importance >= 0.95
+      [
+        "all",
+        [">=", ["zoom"], 12],
+        ["<", ["zoom"], 13],
+        [">=", ["coalesce", ["get", "importance_score"], 0], 0.95],
+      ],
+      // zoom 13-13.99 → importance >= 0.90
+      [
+        "all",
+        [">=", ["zoom"], 13],
+        ["<", ["zoom"], 14],
+        [">=", ["coalesce", ["get", "importance_score"], 0], 0.93],
+      ],
+      // zoom 14-14.99 → importance >= 0.85
+      [
+        "all",
+        [">=", ["zoom"], 14],
+        ["<", ["zoom"], 15],
+        [">=", ["coalesce", ["get", "importance_score"], 0], 0.9],
+      ],
+      // zoom 15-15.99 → importance >= 0.80
+      [
+        "all",
+        [">=", ["zoom"], 15],
+        ["<", ["zoom"], 16],
+        [">=", ["coalesce", ["get", "importance_score"], 0], 0.8],
+      ],
+      // zoom 16+ → show all
+      [">=", ["zoom"], 16],
+    ],
     paint: {
       "text-color": [
         "case",
@@ -251,17 +237,6 @@ export function addPOILayers(map: maplibregl.Map): void {
 // -------------------------------------------------
 // Data helpers
 // -------------------------------------------------
-
-/** Replace the main POI source data */
-export function updatePOISource(
-  map: maplibregl.Map,
-  geojson: GeoJSON.FeatureCollection<GeoJSON.Point>,
-): void {
-  const source = map.getSource(POI_SOURCE_ID) as
-    | maplibregl.GeoJSONSource
-    | undefined;
-  if (source) source.setData(geojson);
-}
 
 /** Replace highlighted POI source data (search results) */
 export function updateHighlightSource(

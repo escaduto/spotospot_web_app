@@ -1,16 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { SeedItineraryItems } from "@/src/supabase/types";
+import type { ItineraryItem } from "@/src/supabase/types";
 import { PlacePointResult } from "@/src/supabase/places";
 import { usePlacesSearch } from "@/src/hooks/usePlacesSearch";
 import { getPOIConfig } from "@/src/map/scripts/poi-config";
 
 interface Props {
-  item?: SeedItineraryItems;
+  item?: ItineraryItem;
   dayId: string;
   nextIndex?: number;
-  onSave: (updates: Partial<SeedItineraryItems>) => Promise<void>;
+  onSave: (updates: Partial<ItineraryItem>) => Promise<void>;
   onCancel: () => void;
   onDelete?: () => Promise<void>;
   mapCenter?: { lng: number; lat: number };
@@ -38,8 +38,10 @@ export default function ActivityEditor({
     item_type: item?.item_type ?? "activity",
     description: item?.description ?? "",
     duration_minutes: item?.duration_minutes ?? 60,
-    coords: item?.coords ?? null,
+    coords: item?.location_coords ?? null,
     place_id: item?.place_id ?? null,
+    start_time: item?.start_time ?? "",
+    end_time: item?.end_time ?? "",
   });
 
   // Track whether coords were explicitly set via POI selection
@@ -50,10 +52,10 @@ export default function ActivityEditor({
 
   // Sync form coords when item prop changes (e.g. after drag-to-update)
   useEffect(() => {
-    if (item?.coords != null && !coordsManuallySet) {
-      setForm((f) => ({ ...f, coords: item.coords ?? null }));
+    if (item?.location_coords != null && !coordsManuallySet) {
+      setForm((f) => ({ ...f, coords: item.location_coords ?? null }));
     }
-  }, [item?.coords, coordsManuallySet]);
+  }, [item?.location_coords, coordsManuallySet]);
 
   // POI search with current map center for distance-based sorting
   const { query, results, isOpen, handleQueryChange, clear } =
@@ -78,14 +80,16 @@ export default function ActivityEditor({
     try {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { coords: _coords, ...rest } = form;
-      const updates: Partial<SeedItineraryItems> = {
+      const updates: Partial<ItineraryItem> = {
         ...rest,
-        seed_itinerary_day_id: dayId,
+        start_time: form.start_time || null,
+        end_time: form.end_time || null,
+        itinerary_day_id: dayId,
         order_index: item?.order_index ?? nextIndex,
       };
       // Only include coords if explicitly set via POI selection
       if (coordsManuallySet) {
-        updates.coords = form.coords;
+        updates.location_coords = form.coords;
       }
       await onSave(updates);
     } finally {
@@ -251,6 +255,34 @@ export default function ActivityEditor({
                 ...f,
                 duration_minutes: parseInt(e.target.value) || 0,
               }))
+            }
+            className="w-full border rounded-lg px-3 py-2 text-sm mt-1"
+          />
+        </div>
+      </div>
+
+      {/* Time Range */}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-xs font-medium text-gray-600">
+            Start Time
+          </label>
+          <input
+            type="time"
+            value={form.start_time}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, start_time: e.target.value }))
+            }
+            className="w-full border rounded-lg px-3 py-2 text-sm mt-1"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-gray-600">End Time</label>
+          <input
+            type="time"
+            value={form.end_time}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, end_time: e.target.value }))
             }
             className="w-full border rounded-lg px-3 py-2 text-sm mt-1"
           />

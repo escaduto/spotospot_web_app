@@ -1,28 +1,25 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import maplibregl from "maplibre-gl";
 import { Protocol, PMTiles } from "pmtiles";
-import { PMTILES_URL } from "../constants/paths";
+import { GLOBAL_PMTILES_URL, PLACES_PMTILES_URL } from "../constants/paths";
 import { defaultMapStyleJSON } from "../map/styles/default";
 import {
   loadPOIIcons,
   addPOILayers,
-  updatePOISource,
   updateHighlightSource,
   POI_SOURCE_ID,
-  POI_CIRCLE_LAYER_ID,
   POI_ICON_LAYER_ID,
-  POI_CLUSTER_LAYER_ID,
   POI_HIGHLIGHT_SOURCE_ID,
   POI_HIGHLIGHT_CIRCLE_LAYER_ID,
   POI_HIGHLIGHT_ICON_LAYER_ID,
   INTERACTIVE_LAYERS,
 } from "../map/scripts/poi-layers";
 import {
-  getPlacesInBounds,
   PlacePointResult,
   placesToGeoJSON,
-  type PlaceBounds,
+  getPlaceDetails,
 } from "../supabase/places";
+import { getPOIConfig } from "../map/scripts/poi-config";
 
 // -------------------------------------------------
 // Types
@@ -54,80 +51,21 @@ export function useDiscoverMap() {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [selectedPOI, setSelectedPOI] = useState<SelectedPOI | null>(null);
-  const [poiCount, setPOICount] = useState(0);
-  const [loadingPOIs, setLoadingPOIs] = useState(false);
+  const [loadingPOI, setLoadingPOI] = useState(false);
   const [mapCenter, setMapCenter] = useState<{ lng: number; lat: number }>({
     lng: -122.4107,
     lat: 37.7784,
   });
   const [highlightedCount, setHighlightedCount] = useState(0);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fetchIdRef = useRef(0); // monotonic counter to ignore stale responses
-  const lastBoundsRef = useRef<string | null>(null); // Track last fetched bounds
 
-  // ------ Fetch POIs for current viewport ------
-  const fetchPOIs = useCallback(async () => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    const zoom = map.getZoom();
-    // Skip at very low zoom – too many POIs, query will be slow
-    if (zoom < 6) {
-      updatePOISource(map, { type: "FeatureCollection", features: [] });
-      setPOICount(0);
-      setLoadingPOIs(false);
-      return;
-    }
-
-    const bounds = map.getBounds();
-    const boundsObj: PlaceBounds = {
-      minLng: bounds.getWest(),
-      minLat: bounds.getSouth(),
-      maxLng: bounds.getEast(),
-      maxLat: bounds.getNorth(),
-    };
-
-    // Create a bounds signature to check if we've already fetched this area
-    const boundsSignature = `${boundsObj.minLng.toFixed(4)},${boundsObj.minLat.toFixed(4)},${boundsObj.maxLng.toFixed(4)},${boundsObj.maxLat.toFixed(4)},${zoom.toFixed(1)}`;
-
-    // Skip if we've already fetched this exact viewport
-    if (lastBoundsRef.current === boundsSignature) {
-      return;
-    }
-
-    lastBoundsRef.current = boundsSignature;
-    const id = ++fetchIdRef.current;
-
-    setLoadingPOIs(true);
-    try {
-      const places = await getPlacesInBounds(boundsObj, zoom);
-      // Only apply if this is still the latest request
-      if (id !== fetchIdRef.current) return;
-      const geojson = placesToGeoJSON(places);
-      updatePOISource(map, geojson);
-      setPOICount(places.length);
-    } catch (err) {
-      if (id === fetchIdRef.current) {
-        console.error("Error fetching POIs:", err);
-      }
-    } finally {
-      if (id === fetchIdRef.current) {
-        setLoadingPOIs(false);
-      }
-    }
-  }, []);
-
-  // ------ Debounced handler for moveend / zoomend ------
+  // ------ Track map center on move ------
   const handleViewportChange = useCallback(() => {
     const map = mapRef.current;
     if (map) {
       const center = map.getCenter();
       setMapCenter({ lng: center.lng, lat: center.lat });
     }
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    // Increase debounce to 800ms for better performance
-    debounceRef.current = setTimeout(() => fetchPOIs(), 800);
-  }, [fetchPOIs]);
+  }, []);
 
   // ------ Initialise map ------
   useEffect(() => {
@@ -135,8 +73,13 @@ export function useDiscoverMap() {
 
     const protocol = new Protocol();
     maplibregl.addProtocol("pmtiles", protocol.tile);
-    const p = new PMTiles(PMTILES_URL);
-    protocol.add(p);
+    // Register global basemap
+    const globalTiles = new PMTiles(GLOBAL_PMTILES_URL);
+    protocol.add(globalTiles);
+
+    // Register places tiles
+    const placesTiles = new PMTiles(PLACES_PMTILES_URL);
+    protocol.add(placesTiles);
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
@@ -156,92 +99,222 @@ export function useDiscoverMap() {
       addPOILayers(map);
 
       setMapLoaded(true);
-      fetchPOIs();
     });
 
-    // Viewport change → reload POIs
+    // Track center for search distance sorting
     map.on("moveend", handleViewportChange);
 
     // ── Hover on POI circles / icons ──
-    const poiHoverLayers = [POI_CIRCLE_LAYER_ID, POI_ICON_LAYER_ID];
+    const poiHoverLayers = [POI_ICON_LAYER_ID];
     const highlightHoverLayers = [
       POI_HIGHLIGHT_CIRCLE_LAYER_ID,
       POI_HIGHLIGHT_ICON_LAYER_ID,
     ];
-    let hoveredPOI: { source: string; id: number } | null = null;
+    let hoveredPOI: { source: string; id: number | undefined } | null = null;
     let hoverPopup: maplibregl.Popup | null = null;
 
     const clearHover = () => {
-      if (hoveredPOI) {
-        map.setFeatureState(
-          { source: hoveredPOI.source, id: hoveredPOI.id },
-          { hover: false },
-        );
-        hoveredPOI = null;
+      if (hoveredPOI && hoveredPOI.id != null) {
+        const featureState =
+          hoveredPOI.source === POI_SOURCE_ID
+            ? {
+                source: hoveredPOI.source,
+                sourceLayer: "places",
+                id: hoveredPOI.id,
+              }
+            : { source: hoveredPOI.source, id: hoveredPOI.id };
+        map.setFeatureState(featureState, { hover: false });
       }
+      hoveredPOI = null;
       map.getCanvas().style.cursor = "";
       hoverPopup?.remove();
       hoverPopup = null;
     };
 
-    const makeHoverHandler =
-      (sourceId: string) =>
-      (
-        e: maplibregl.MapMouseEvent & {
-          features?: maplibregl.MapGeoJSONFeature[];
-        },
-      ) => {
-        if (!e.features?.length) return;
-        const feat = e.features[0];
-        const fid = feat.id as number;
-        if (hoveredPOI?.id === fid && hoveredPOI?.source === sourceId) return;
+    // Hover handler for vector tile POIs (has id, name, category, icon, importance_score)
+    const makeVectorHoverHandler = (
+      e: maplibregl.MapMouseEvent & {
+        features?: maplibregl.MapGeoJSONFeature[];
+      },
+    ) => {
+      if (!e.features?.length) return;
+      const feat = e.features[0];
+      const fid = feat.id as number | undefined;
+      if (hoveredPOI?.id === fid && hoveredPOI?.source === POI_SOURCE_ID)
+        return;
 
-        clearHover();
-        hoveredPOI = { source: sourceId, id: fid };
-        map.setFeatureState({ source: sourceId, id: fid }, { hover: true });
-        map.getCanvas().style.cursor = "pointer";
+      clearHover();
+      hoveredPOI = { source: POI_SOURCE_ID, id: fid };
+      if (fid != null) {
+        map.setFeatureState(
+          { source: POI_SOURCE_ID, sourceLayer: "places", id: fid },
+          { hover: true },
+        );
+      }
+      map.getCanvas().style.cursor = "pointer";
 
-        const props = feat.properties!;
-        const location = [props.address, props.city].filter(Boolean).join(", ");
-        const html = `
-          <div class="poi-popup-card">
-            <div class="poi-popup-badge" style="color:${props.color}">
-              <span class="poi-popup-dot" style="background:${props.color}"></span>
-              ${props.categoryLabel}
-            </div>
-            <div class="poi-popup-name">${props.name}</div>
-            ${location ? `<div class="poi-popup-location">${location}</div>` : ""}
+      const props = feat.properties!;
+      const cfg = getPOIConfig(props.category);
+      const html = `
+        <div class="poi-popup-card">
+          <div class="poi-popup-badge" style="color:${cfg.color}">
+            <span class="poi-popup-dot" style="background:${cfg.color}"></span>
+            ${cfg.label}
           </div>
-        `;
+          <div class="poi-popup-name">${props.name || "Unknown"}</div>
+          <div class="poi-popup-importance">Popularity: ${(
+            Number(props.importance_score) * 100
+          ).toFixed(1)}%</div>
+        </div>
+      `;
 
-        const coords = (feat.geometry as GeoJSON.Point).coordinates.slice() as [
-          number,
-          number,
-        ];
+      const coords = (feat.geometry as GeoJSON.Point).coordinates.slice() as [
+        number,
+        number,
+      ];
 
-        hoverPopup = new maplibregl.Popup({
-          closeButton: false,
-          closeOnClick: false,
-          offset: 14,
-          anchor: "bottom",
-          className: "search-poi-popup",
-        })
-          .setLngLat(coords)
-          .setHTML(html)
-          .addTo(map);
-      };
+      hoverPopup = new maplibregl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        offset: 14,
+        anchor: "bottom",
+        className: "search-poi-popup",
+      })
+        .setLngLat(coords)
+        .setHTML(html)
+        .addTo(map);
+    };
+
+    // Hover handler for GeoJSON highlight source (has full properties)
+    const makeHighlightHoverHandler = (
+      e: maplibregl.MapMouseEvent & {
+        features?: maplibregl.MapGeoJSONFeature[];
+      },
+    ) => {
+      if (!e.features?.length) return;
+      const feat = e.features[0];
+      const fid = feat.id as number | undefined;
+      if (
+        hoveredPOI?.id === fid &&
+        hoveredPOI?.source === POI_HIGHLIGHT_SOURCE_ID
+      )
+        return;
+
+      clearHover();
+      hoveredPOI = { source: POI_HIGHLIGHT_SOURCE_ID, id: fid };
+      if (fid != null) {
+        map.setFeatureState(
+          { source: POI_HIGHLIGHT_SOURCE_ID, id: fid },
+          { hover: true },
+        );
+      }
+      map.getCanvas().style.cursor = "pointer";
+
+      const props = feat.properties!;
+      const location = [props.address, props.city].filter(Boolean).join(", ");
+      const html = `
+        <div class="poi-popup-card">
+          <div class="poi-popup-badge" style="color:${props.color}">
+            <span class="poi-popup-dot" style="background:${props.color}"></span>
+            ${props.categoryLabel}
+          </div>
+          <div class="poi-popup-name">${props.name}</div>
+          ${location ? `<div class="poi-popup-location">${location}</div>` : ""}
+        </div>
+      `;
+
+      const coords = (feat.geometry as GeoJSON.Point).coordinates.slice() as [
+        number,
+        number,
+      ];
+
+      hoverPopup = new maplibregl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        offset: 14,
+        anchor: "bottom",
+        className: "search-poi-popup",
+      })
+        .setLngLat(coords)
+        .setHTML(html)
+        .addTo(map);
+    };
 
     for (const layer of poiHoverLayers) {
-      map.on("mousemove", layer, makeHoverHandler(POI_SOURCE_ID));
+      map.on("mousemove", layer, makeVectorHoverHandler);
       map.on("mouseleave", layer, clearHover);
     }
     for (const layer of highlightHoverLayers) {
-      map.on("mousemove", layer, makeHoverHandler(POI_HIGHLIGHT_SOURCE_ID));
+      map.on("mousemove", layer, makeHighlightHoverHandler);
       map.on("mouseleave", layer, clearHover);
     }
 
-    // ---- Click handler for POIs ----
-    const handlePOIClick = (e: maplibregl.MapLayerMouseEvent) => {
+    // ---- Click handler for vector tile POIs → fetch full details from DB ----
+    const handleVectorPOIClick = async (e: maplibregl.MapLayerMouseEvent) => {
+      if (!e.features?.length) return;
+      const feature = e.features[0];
+      const props = feature.properties!;
+      const coords = (feature.geometry as GeoJSON.Point).coordinates as [
+        number,
+        number,
+      ];
+      const placeId = props.id as string;
+      if (!placeId) return;
+
+      // Show immediately with tile data, then enrich
+      const cfg = getPOIConfig(props.category);
+      setSelectedPOI({
+        id: placeId,
+        name: props.name || "Unknown",
+        name_default: props.name || "",
+        category: props.category || null,
+        category_group: cfg.label,
+        address: null,
+        city: null,
+        region: null,
+        country: null,
+        popularity_score: props.popularity_score ?? 0,
+        is_top_destination: false,
+        website_url: null,
+        phone_number: null,
+        coordinates: coords,
+      });
+
+      // Fetch full details from places table
+      try {
+        setLoadingPOI(true);
+        const details = await getPlaceDetails(placeId);
+        if (details?.place) {
+          const p = details.place;
+          setSelectedPOI((prev) =>
+            prev?.id === placeId
+              ? {
+                  ...prev,
+                  name: p.name_en || p.name_default,
+                  name_default: p.name_default,
+                  category: p.category,
+                  category_group: p.category_group || cfg.label,
+                  address: p.address,
+                  city: p.city,
+                  region: p.region,
+                  country: p.country,
+                  popularity_score: p.popularity_score ?? 0,
+                  is_top_destination: p.is_top_destination ?? false,
+                  website_url: p.website_url,
+                  phone_number: p.phone_number,
+                }
+              : prev,
+          );
+        }
+      } catch (err) {
+        console.error("Error fetching place details:", err);
+      } finally {
+        setLoadingPOI(false);
+      }
+    };
+
+    // ---- Click handler for highlight (GeoJSON) POIs ----
+    const handleHighlightPOIClick = (e: maplibregl.MapLayerMouseEvent) => {
       if (!e.features?.length) return;
       const feature = e.features[0];
       const props = feature.properties!;
@@ -270,31 +343,13 @@ export function useDiscoverMap() {
       });
     };
 
-    // Click listeners for POI + highlight layers
-    for (const layer of [...poiHoverLayers, ...highlightHoverLayers]) {
-      map.on("click", layer, handlePOIClick);
+    // Click listeners
+    for (const layer of poiHoverLayers) {
+      map.on("click", layer, handleVectorPOIClick);
     }
-
-    // ---- Click: cluster → zoom in ----
-    map.on("click", POI_CLUSTER_LAYER_ID, (e) => {
-      const features = map.queryRenderedFeatures(e.point, {
-        layers: [POI_CLUSTER_LAYER_ID],
-      });
-      if (!features.length) return;
-
-      const clusterId = features[0].properties!.cluster_id;
-      const source = map.getSource(POI_SOURCE_ID) as maplibregl.GeoJSONSource;
-
-      source.getClusterExpansionZoom(clusterId).then((zoom) => {
-        map.easeTo({
-          center: (features[0].geometry as GeoJSON.Point).coordinates as [
-            number,
-            number,
-          ],
-          zoom,
-        });
-      });
-    });
+    for (const layer of highlightHoverLayers) {
+      map.on("click", layer, handleHighlightPOIClick);
+    }
 
     // ---- Click: empty area → deselect ----
     map.on("click", (e) => {
@@ -302,14 +357,6 @@ export function useDiscoverMap() {
         layers: INTERACTIVE_LAYERS,
       });
       if (hits.length === 0) setSelectedPOI(null);
-    });
-
-    // ---- Cursor affordance for clusters ----
-    map.on("mouseenter", POI_CLUSTER_LAYER_ID, () => {
-      map.getCanvas().style.cursor = "pointer";
-    });
-    map.on("mouseleave", POI_CLUSTER_LAYER_ID, () => {
-      map.getCanvas().style.cursor = "";
     });
 
     // ---- Controls ----
@@ -325,7 +372,6 @@ export function useDiscoverMap() {
     );
 
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
       hoverPopup?.remove();
       maplibregl.removeProtocol("pmtiles");
       map.remove();
@@ -384,8 +430,7 @@ export function useDiscoverMap() {
     mapLoaded,
     selectedPOI,
     closePOI,
-    poiCount,
-    loadingPOIs,
+    loadingPOI,
     flyTo,
     mapCenter,
     highlightPlaces,

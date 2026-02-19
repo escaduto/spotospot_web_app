@@ -4,7 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect } from "react";
 import { useBaseMap } from "@/src/hooks/useBaseMap";
 import type {
-  SeedItineraryItems,
+  ItineraryItem,
   itinerary_item_routes,
 } from "@/src/supabase/types";
 import type { PlacePointResult } from "@/src/supabase/places";
@@ -14,7 +14,7 @@ import { useSearchPOILayers } from "./useSearchPOILayers";
 import { useRouteLayers } from "./useRouteLayers";
 
 interface Props {
-  items: SeedItineraryItems[];
+  items: ItineraryItem[];
   selectedItemId: string | null;
   editingItemId: string | null;
   onSelectItem: (itemId: string) => void;

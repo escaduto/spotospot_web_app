@@ -1,11 +1,11 @@
 "use client";
 
-import type { SeedItineraryDays } from "@/src/supabase/types";
+import type { ItineraryDay } from "@/src/supabase/types";
 import Image from "next/image"; // Add this import
 
 interface Props {
-  days: SeedItineraryDays[];
-  onSelect: (day: SeedItineraryDays) => void;
+  days: ItineraryDay[];
+  onSelect: (day: ItineraryDay) => void;
 }
 
 const statusBadge: Record<string, string> = {
@@ -50,10 +50,10 @@ export default function ListView({ days, onSelect }: Props) {
             )}
             <span
               className={`absolute top-2 right-2 text-xs font-semibold px-2 py-0.5 rounded-full ${
-                statusBadge[day.approval_status] ?? ""
+                statusBadge[day.visibility] ?? ""
               }`}
             >
-              {day.approval_status}
+              {day.visibility}
             </span>
           </div>
 

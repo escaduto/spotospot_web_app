@@ -1,27 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import type {
-  SeedItineraryDays,
-  SeedItineraryItems,
-} from "@/src/supabase/types";
+import type { ItineraryDay, ItineraryItem } from "@/src/supabase/types";
 import ItemEditor from "./ItemEditor";
 import PhotoSearchModal from "./PhotoSearchModal";
 import Image from "next/image";
 import { parsePoint } from "@/src/utils/geo";
 
 interface Props {
-  day: SeedItineraryDays;
-  items: SeedItineraryItems[];
+  day: ItineraryDay;
+  items: ItineraryItem[];
   onClose: () => void;
   onApprove: () => Promise<void>;
   onReject: () => Promise<void>;
-  onUpdateDay: (updates: Partial<SeedItineraryDays>) => Promise<void>;
+  onUpdateDay: (updates: Partial<ItineraryDay>) => Promise<void>;
   onUpdateItem: (
     itemId: string,
-    updates: Partial<SeedItineraryItems>,
+    updates: Partial<ItineraryItem>,
   ) => Promise<void>;
-  onAddItem: (item: Omit<SeedItineraryItems, "id">) => Promise<void>;
+  onAddItem: (item: Omit<ItineraryItem, "id">) => Promise<void>;
   onDeleteItem: (itemId: string) => Promise<void>;
   refetch: () => void;
 }
@@ -39,13 +36,13 @@ export default function DayDetailModal({
   refetch,
 }: Props) {
   const [editingDay, setEditingDay] = useState(false);
-  const isApproved = day.approval_status === "approved";
+  const isApproved = day.visibility === "public";
   const [dayForm, setDayForm] = useState({
     title: day.title ?? "",
     city: day.city ?? "",
     country: day.country ?? "",
     description: day.description ?? "",
-    category_type: day.category_type ?? "",
+    category_type: day.category_type ?? [],
     notes: day.notes ?? "",
   });
   const [showPhotoSearch, setShowPhotoSearch] = useState(false);
@@ -60,7 +57,8 @@ export default function DayDetailModal({
       city: dayForm.city || null,
       country: dayForm.country || null,
       description: dayForm.description || null,
-      category_type: dayForm.category_type || null,
+      category_type:
+        dayForm.category_type.length > 0 ? dayForm.category_type : null,
       notes: dayForm.notes || null,
     });
     setEditingDay(false);
@@ -93,7 +91,7 @@ export default function DayDetailModal({
           {day.image_url ? (
             <Image
               src={day.image_url}
-              alt={day.title}
+              alt={day.title ?? "Itinerary Day Image"}
               fill
               className="w-full h-full object-cover"
             />
@@ -140,9 +138,9 @@ export default function DayDetailModal({
                 />
                 <FieldInput
                   label="Category"
-                  value={dayForm.category_type}
+                  value={dayForm.category_type[0] ?? ""}
                   onChange={(v) =>
-                    setDayForm((f) => ({ ...f, category_type: v }))
+                    setDayForm((f) => ({ ...f, category_type: [v] }))
                   }
                 />
                 <FieldInput
@@ -300,7 +298,7 @@ export default function DayDetailModal({
                           </p>
                         )}
                         {(() => {
-                          const coordsParsed = parsePoint(item.coords);
+                          const coordsParsed = parsePoint(item.location_coords);
                           return coordsParsed ? (
                             <span className="text-[10px] text-green-600">
                               📍 {coordsParsed.lat.toFixed(4)},{" "}
@@ -324,7 +322,7 @@ export default function DayDetailModal({
                   dayId={day.id}
                   nextIndex={items.length}
                   onSave={async (newItem) => {
-                    await onAddItem(newItem as Omit<SeedItineraryItems, "id">);
+                    await onAddItem(newItem as Omit<ItineraryItem, "id">);
                     setAddingItem(false);
                     refetch();
                   }}
@@ -354,7 +352,7 @@ export default function DayDetailModal({
                 await onApprove();
                 setBusy(false);
               }}
-              disabled={busy || day.approval_status === "approved"}
+              disabled={busy || day.visibility === "public"}
               className="flex-1 bg-green-600 text-white py-2.5 rounded-xl font-semibold text-sm disabled:opacity-40"
             >
               ✓ Approve & Publish
@@ -367,8 +365,8 @@ export default function DayDetailModal({
               }}
               disabled={
                 busy ||
-                day.approval_status === "approved" ||
-                day.approval_status === "rejected"
+                day.visibility === "public" ||
+                day.visibility === "private"
               }
               className="flex-1 bg-red-600 text-white py-2.5 rounded-xl font-semibold text-sm disabled:opacity-40"
             >

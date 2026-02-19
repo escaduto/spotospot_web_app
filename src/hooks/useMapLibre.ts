@@ -1,7 +1,7 @@
 import maplibregl, { StyleSpecification } from "maplibre-gl";
 import { PMTiles, Protocol } from "pmtiles";
 import { useRef, useEffect, useState } from "react";
-import { PMTILES_URL } from "../constants/paths";
+import { GLOBAL_PMTILES_URL } from "../constants/paths";
 import { defaultMapStyleJSON } from "../map/styles/default";
 
 interface UseMapLibreProps {
@@ -48,7 +48,7 @@ export const useMapLibre = ({
     const protocol = new Protocol();
     maplibregl.addProtocol("pmtiles", protocol.tile);
 
-    const p = new PMTiles(PMTILES_URL);
+    const p = new PMTiles(GLOBAL_PMTILES_URL);
     protocol.add(p);
 
     const map = new maplibregl.Map({

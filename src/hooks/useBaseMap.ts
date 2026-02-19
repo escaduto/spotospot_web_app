@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import maplibregl from "maplibre-gl";
 import { Protocol, PMTiles } from "pmtiles";
-import { PMTILES_URL } from "../constants/paths";
+import { GLOBAL_PMTILES_URL } from "../constants/paths";
 import { defaultMapStyleJSON } from "../map/styles/default";
 
 export interface BaseMapOptions {
@@ -35,7 +35,7 @@ export function useBaseMap(options: BaseMapOptions = {}) {
 
     const protocol = new Protocol();
     maplibregl.addProtocol("pmtiles", protocol.tile);
-    const p = new PMTiles(PMTILES_URL);
+    const p = new PMTiles(GLOBAL_PMTILES_URL);
     protocol.add(p);
 
     const map = new maplibregl.Map({

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState } from "react";
 import type {
-  SeedItineraryDays,
-  SeedItineraryItems,
+  ItineraryDay,
+  ItineraryItem,
   itinerary_item_routes,
 } from "@/src/supabase/types";
 import { createClient } from "@/src/supabase/client";
@@ -17,8 +17,8 @@ import { PlacePointResult } from "@/src/supabase/places";
 import DayDetailsMap from "./DayDetailsMap/DayDetailsMap";
 
 interface Props {
-  day: SeedItineraryDays;
-  items: SeedItineraryItems[];
+  day: ItineraryDay;
+  items: ItineraryItem[];
   routes?: itinerary_item_routes[];
   onBack: () => void;
   refetch: () => void;
@@ -44,33 +44,31 @@ export default function DayDetailsView({
   );
   const [dragFromIdx, setDragFromIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
-  const [recalculatingRouteIds, setRecalculatingRouteIds] = useState<
-    Set<string>
-  >(new Set());
-  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const isApproved = day.approval_status === "approved";
+  const isApproved = day.visibility === "public";
 
   const [dayForm, setDayForm] = useState({
     title: day.title ?? "",
     city: day.city ?? "",
     country: day.country ?? "",
     description: day.description ?? "",
-    category_type: day.category_type ?? "",
+    category_type: day.category_type ?? ([] as string[]),
     notes: day.notes ?? "",
   });
 
-  // Update form when day changes
-  useEffect(() => {
+  // Sync form when the day prop changes (e.g. after refetch)
+  const [prevDayId, setPrevDayId] = useState(day.id);
+  if (prevDayId !== day.id) {
+    setPrevDayId(day.id);
     setDayForm({
       title: day.title ?? "",
       city: day.city ?? "",
       country: day.country ?? "",
       description: day.description ?? "",
-      category_type: day.category_type ?? "",
+      category_type: day.category_type ?? [],
       notes: day.notes ?? "",
     });
-  }, [day]);
+  }
 
   const handleSaveDay = async () => {
     setBusy(true);
@@ -85,12 +83,12 @@ export default function DayDetailsView({
     if (dayForm.description !== (day.description ?? ""))
       payload.description = dayForm.description || null;
     if (dayForm.category_type !== (day.category_type ?? ""))
-      payload.category_type = dayForm.category_type || null;
+      payload.category_type = dayForm.category_type[0] || null;
     if (dayForm.notes !== (day.notes ?? ""))
       payload.notes = dayForm.notes || null;
 
     const { error } = await supabase
-      .from("seed_itinerary_days")
+      .from("itinerary_days")
       .update(payload)
       .eq("id", day.id);
 
@@ -110,7 +108,7 @@ export default function DayDetailsView({
     blur_hash: string | null | undefined,
   ) => {
     await supabase
-      .from("seed_itinerary_days")
+      .from("itinerary_days")
       .update({
         image_url: url,
         image_properties: properties,
@@ -125,8 +123,8 @@ export default function DayDetailsView({
   const handleApprove = async () => {
     setBusy(true);
     await supabase
-      .from("seed_itinerary_days")
-      .update({ approval_status: "approved" })
+      .from("itinerary_days")
+      .update({ visibility: "public" })
       .eq("id", day.id);
     setBusy(false);
     refetch();
@@ -135,8 +133,8 @@ export default function DayDetailsView({
   const handleReject = async () => {
     setBusy(true);
     await supabase
-      .from("seed_itinerary_days")
-      .update({ approval_status: "rejected" })
+      .from("itinerary_days")
+      .update({ visibility: "private" })
       .eq("id", day.id);
     setBusy(false);
     refetch();
@@ -144,72 +142,26 @@ export default function DayDetailsView({
 
   const handleUpdateItem = async (
     itemId: string,
-    updates: Partial<SeedItineraryItems>,
+    updates: Partial<ItineraryItem>,
   ) => {
-    await supabase
-      .from("seed_itinerary_items")
-      .update(updates)
-      .eq("id", itemId);
+    await supabase.from("itinerary_items").update(updates).eq("id", itemId);
     setEditingItemId(null);
     refetch();
   };
 
-  const handleAddItem = async (newItem: Partial<SeedItineraryItems>) => {
+  const handleAddItem = async (newItem: Partial<ItineraryItem>) => {
     await supabase
-      .from("seed_itinerary_items")
-      .insert(newItem as Omit<SeedItineraryItems, "id">);
+      .from("itinerary_items")
+      .insert(newItem as Omit<ItineraryItem, "id">);
     setAddingItem(false);
     refetch();
   };
 
   const handleDeleteItem = async (itemId: string) => {
-    await supabase.from("seed_itinerary_items").delete().eq("id", itemId);
+    await supabase.from("itinerary_items").delete().eq("id", itemId);
     setEditingItemId(null);
     refetch();
   };
-
-  // Poll route_recalculation_queue until route is done recalculating
-  const pollRouteRecalc = useCallback(
-    async (routeId: string) => {
-      const maxAttempts = 30; // ~30 seconds max
-      let attempt = 0;
-
-      const poll = async () => {
-        attempt++;
-
-        // Check if there are any pending/processing entries for this route
-        const { data } = await supabase
-          .from("route_recalculation_queue")
-          .select("id, status")
-          .eq("route_id", routeId)
-          .in("status", ["pending", "processing"])
-          .limit(1);
-
-        if (data && data.length > 0 && attempt < maxAttempts) {
-          // Still recalculating — poll again in 1s
-          pollTimerRef.current = setTimeout(poll, 1000);
-        } else {
-          // Done or timed out — refetch routes and clear recalc state
-          setRecalculatingRouteIds((prev) => {
-            const next = new Set(prev);
-            next.delete(routeId);
-            return next;
-          });
-          refetch();
-        }
-      };
-
-      poll();
-    },
-    [supabase, refetch],
-  );
-
-  // Clean up poll timer on unmount
-  useEffect(() => {
-    return () => {
-      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-    };
-  }, []);
 
   const handleUpdateRouteTransportTypes = async (
     routeId: string,
@@ -220,10 +172,7 @@ export default function DayDetailsView({
       .from("itinerary_item_routes")
       .update({ transportation_type: transportationTypes })
       .eq("id", routeId);
-
-    // Mark as recalculating and start polling
-    setRecalculatingRouteIds((prev) => new Set(prev).add(routeId));
-    pollRouteRecalc(routeId);
+    refetch();
   };
 
   const handleReorder = async (fromIndex: number, toIndex: number) => {
@@ -262,7 +211,7 @@ export default function DayDetailsView({
           return null; // no change
         }
         return supabase
-          .from("seed_itinerary_items")
+          .from("itinerary_items")
           .update({
             order_index: newOrderIndex,
             start_time: slot.start_time,
@@ -322,9 +271,7 @@ export default function DayDetailsView({
             </button>
             <button
               onClick={handleReject}
-              disabled={
-                busy || isApproved || day.approval_status === "rejected"
-              }
+              disabled={busy || isApproved || day.visibility === "private"}
               className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-40"
             >
               ✗ Reject
@@ -346,8 +293,8 @@ export default function DayDetailsView({
               // Update the item's coordinates
               const geoPoint = `POINT(${lng} ${lat})`;
               await supabase
-                .from("seed_itinerary_items")
-                .update({ coords: geoPoint })
+                .from("itinerary_items")
+                .update({ location_coords: geoPoint })
                 .eq("id", itemId);
               refetch();
             }}
@@ -373,7 +320,7 @@ export default function DayDetailsView({
               <div className="relative h-48 rounded-lg overflow-hidden">
                 <Image
                   src={day.image_url}
-                  alt={day.title}
+                  alt={day.title ?? "Day image"}
                   fill
                   className="object-cover"
                 />
@@ -555,7 +502,6 @@ export default function DayDetailsView({
                           onUpdateTransportTypes={
                             handleUpdateRouteTransportTypes
                           }
-                          isRecalculating={recalculatingRouteIds.has(route.id)}
                         />,
                       );
                     }

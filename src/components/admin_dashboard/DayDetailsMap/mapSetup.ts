@@ -6,7 +6,6 @@ import {
   searchPOIsIcons,
   searchPOIsLabels,
   routeLine,
-  routeBadgeBg,
   routeBadge,
 } from "./mapStyles";
 
@@ -21,7 +20,7 @@ function setUpMapLayers(map: maplibregl.Map) {
   poiCategoryList.forEach(async (category) => {
     if (map.hasImage(category)) return;
     const image = await map.loadImage(`/icons/${category}.png`);
-    map.addImage(category, image.data, { sdf: true });
+    map.addImage(category, image.data);
   });
 
   // ── Routes source (lines rendered below points) ──
@@ -36,7 +35,6 @@ function setUpMapLayers(map: maplibregl.Map) {
     type: "geojson",
     data: { type: "FeatureCollection", features: [] },
   });
-  map.addLayer(routeBadgeBg);
   map.addLayer(routeBadge);
 
   // ── Activities source ──

@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import type { SeedItineraryItems } from "@/src/supabase/types";
+import type { ItineraryItem } from "@/src/supabase/types";
 import { toGeoPoint } from "@/src/utils/geo";
 
 interface Props {
-  item?: SeedItineraryItems;
+  item?: ItineraryItem;
   dayId: string;
   nextIndex?: number;
-  onSave: (data: Partial<SeedItineraryItems>) => Promise<void>;
+  onSave: (data: Partial<ItineraryItem>) => Promise<void>;
   onCancel: () => void;
   onDelete?: () => Promise<void>;
 }
@@ -27,15 +27,14 @@ export default function ItemEditor({
     description: item?.description ?? "",
     location_name: item?.location_name ?? "",
     location_address: item?.location_address ?? "",
-    lat: item?.coords?.lat?.toString() ?? "",
-    lng: item?.coords?.lng?.toString() ?? "",
+    lat: item?.location_coords?.lat?.toString() ?? "",
+    lng: item?.location_coords?.lng?.toString() ?? "",
     place_id: item?.place_id ?? "",
     start_time: item?.start_time ?? "",
     end_time: item?.end_time ?? "",
     duration_minutes: item?.duration_minutes?.toString() ?? "",
     cost_estimate: item?.cost_estimate?.toString() ?? "",
     currency: item?.currency ?? "USD",
-    transportation_type: item?.transportation_type ?? "",
     notes: item?.notes ?? "",
     order_index: item?.order_index ?? nextIndex,
   });
@@ -53,13 +52,13 @@ export default function ItemEditor({
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payload: Record<string, any> = {
-      seed_itinerary_day_id: dayId,
+      itinerary_day_id: dayId,
       title: form.title,
       item_type: form.item_type,
       description: form.description || null,
       location_name: form.location_name || null,
       location_address: form.location_address || null,
-      coords,
+      location_coords: coords,
       place_id: form.place_id || null,
       start_time: form.start_time || null,
       end_time: form.end_time || null,
@@ -68,7 +67,6 @@ export default function ItemEditor({
         : null,
       cost_estimate: form.cost_estimate ? parseFloat(form.cost_estimate) : null,
       currency: form.currency || null,
-      transportation_type: form.transportation_type || null,
       notes: form.notes || null,
       order_index:
         typeof form.order_index === "string"
@@ -117,11 +115,6 @@ export default function ItemEditor({
           label="Place ID"
           value={form.place_id}
           onChange={(v) => set("place_id", v)}
-        />
-        <MiniInput
-          label="Transport Type"
-          value={form.transportation_type}
-          onChange={(v) => set("transportation_type", v)}
         />
         <MiniInput
           label="Start Time"

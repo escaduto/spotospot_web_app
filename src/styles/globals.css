@@ -184,3 +184,48 @@ html {
   color: #9ca3af;
   margin-top: 3px;
 }
+
+/* ── Post-it note markers ── */
+.postit-note {
+  pointer-events: auto;
+  cursor: default;
+  filter: drop-shadow(1px 2px 3px rgba(0, 0, 0, 0.25));
+  transform: rotate(-2deg);
+  transition: transform 0.15s ease;
+}
+.postit-note:hover {
+  transform: rotate(0deg) scale(1.05);
+  z-index: 10;
+}
+.postit-note-inner {
+  position: relative;
+  background: #fef9a7;
+  border-radius: 2px 2px 3px 3px;
+  padding: 8px 10px 10px;
+  max-width: 150px;
+  min-width: 60px;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+.postit-note-fold {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  background: linear-gradient(
+    225deg,
+    rgba(255, 255, 255, 0.6) 0%,
+    rgba(255, 255, 255, 0) 50%,
+    rgba(0, 0, 0, 0.04) 50%,
+    rgba(0, 0, 0, 0.08) 100%
+  );
+  border-radius: 0 2px 0 0;
+}
+.postit-note-text {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #5a4e00;
+  word-break: break-word;
+  white-space: pre-wrap;
+}

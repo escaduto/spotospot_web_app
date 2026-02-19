@@ -4,16 +4,13 @@ import { useEffect, useRef, useCallback } from "react";
 import maplibregl, { LngLatBounds } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useMapLibre } from "@/src/hooks/useMapLibre";
-import type {
-  SeedItineraryDays,
-  SeedItineraryItems,
-} from "@/src/supabase/types";
+import type { ItineraryDay, ItineraryItem } from "@/src/supabase/types";
 import { parsePoint } from "@/src/utils/geo";
 
 interface Props {
-  days: SeedItineraryDays[];
-  items: SeedItineraryItems[];
-  onSelectDay: (day: SeedItineraryDays) => void;
+  days: ItineraryDay[];
+  items: ItineraryItem[];
+  onSelectDay: (day: ItineraryDay) => void;
 }
 
 export default function MapView({ days, items, onSelectDay }: Props) {
@@ -55,9 +52,9 @@ export default function MapView({ days, items, onSelectDay }: Props) {
       const { lat, lng } = repPoint;
 
       const statusColor =
-        day.approval_status === "approved"
+        day.visibility === "public"
           ? "#22c55e"
-          : day.approval_status === "rejected"
+          : day.visibility === "private"
             ? "#ef4444"
             : "#eab308";
 
@@ -89,7 +86,7 @@ export default function MapView({ days, items, onSelectDay }: Props) {
             ${[day.city, day.country].filter(Boolean).join(", ") || "No location"}
           </div>
           <div style="font-size:10px;margin-top:4px;color:${statusColor};font-weight:600">
-            ${day.approval_status.toUpperCase()}
+            ${day.visibility.toUpperCase()}
           </div>
         </div>`,
       );
@@ -108,7 +105,7 @@ export default function MapView({ days, items, onSelectDay }: Props) {
 
     // Item markers (smaller, gray)
     items.forEach((item) => {
-      const coords = parsePoint(item.coords);
+      const coords = parsePoint(item.location_coords);
       if (!coords) return;
       const { lat, lng } = coords;
 
