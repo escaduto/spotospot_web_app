@@ -35,63 +35,10 @@ export interface PlacePointResult {
   is_top_destination: boolean | null;
   metadata: Record<string, string | number> | null;
 }
-// -------------------------------------------------
-// Zoom → query-parameter helpers
-// -------------------------------------------------
-
-/** Higher zoom = show less-popular places.
- *  At wide zooms we only show the most popular POIs
- *  to keep the query fast on large Overture datasets. */
-function getPopularityThreshold(zoom: number): number {
-  if (zoom < 6) return 999; // effectively skip
-  if (zoom < 8) return 90;
-  if (zoom < 10) return 70;
-  if (zoom < 12) return 40;
-  if (zoom < 14) return 10;
-  return 0;
-}
-
-/** Higher zoom = allow more results */
-function getResultLimit(zoom: number): number {
-  if (zoom < 8) return 30;
-  if (zoom < 10) return 60;
-  if (zoom < 12) return 120;
-  if (zoom < 14) return 200;
-  return 400;
-}
 
 // -------------------------------------------------
 // Data fetching
 // -------------------------------------------------
-
-/**
- * Fetch places that fall inside the current map viewport.
- * Calls the `get_places_in_bounds` Supabase RPC (see migrations).
- */
-export async function getPlacesInBounds(
-  bounds: PlaceBounds,
-  zoom: number,
-): Promise<PlacePointResult[]> {
-  const supabase = createClient();
-  const popularityThreshold = getPopularityThreshold(zoom);
-  const limit = getResultLimit(zoom);
-
-  const { data, error } = await supabase.rpc("get_places_in_bounds", {
-    min_lng: bounds.minLng,
-    min_lat: bounds.minLat,
-    max_lng: bounds.maxLng,
-    max_lat: bounds.maxLat,
-    pop_threshold: popularityThreshold,
-    lim: limit,
-  });
-
-  if (error) {
-    console.error("Error fetching places in bounds:", error);
-    return [];
-  }
-
-  return (data as PlacePointResult[]) ?? [];
-}
 
 /**
  * Autocomplete search – matches against name, address, city.
@@ -170,13 +117,78 @@ function toRad(degrees: number): number {
 }
 
 /**
+ * Fetch the complete polygon geometry for a landuse or building feature
+ * directly from Supabase, bypassing tile-edge clipping.
+ *
+ * Supabase / PostgREST automatically serialises PostGIS geometry columns as
+ * GeoJSON objects in the JSON response, so no custom RPC is required.
+ */
+export async function getPolygonGeometry(
+  sourceTable: "landuse_features" | "building_features",
+  sourceId: string,
+): Promise<GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null> {
+  const supabase = createClient();
+
+  // PostgREST returns PostGIS geometry as WKB hex by default.
+  // Selecting `geometry->ST_AsGeoJSON` is not supported via the REST API;
+  // instead we call a lightweight RPC wrapper.
+  const { data, error } = await supabase
+    .rpc("get_polygon_geojson", {
+      p_table: sourceTable,
+      p_id: sourceId,
+    })
+    .maybeSingle();
+
+  if (error || !data) {
+    console.error(
+      `getPolygonGeometry: failed for ${sourceTable}/${sourceId}:`,
+      error,
+    );
+    return null;
+  }
+
+  const row = data as {
+    id: string;
+    name: string | null;
+    category: string | null;
+    category_group: string | null;
+    importance_score: number | null;
+    geojson: string; // ST_AsGeoJSON() text
+  };
+
+  let geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon;
+  try {
+    geometry = JSON.parse(row.geojson) as
+      | GeoJSON.Polygon
+      | GeoJSON.MultiPolygon;
+  } catch {
+    console.error("getPolygonGeometry: failed to parse geojson", row.geojson);
+    return null;
+  }
+
+  return {
+    type: "Feature",
+    id: row.id,
+    geometry,
+    properties: {
+      id: row.id,
+      name: row.name ?? "",
+      category: row.category ?? "",
+      category_group: row.category_group ?? "",
+      importance_score: row.importance_score ?? 0,
+      source_table: sourceTable,
+    },
+  };
+}
+
+/**
  * Get full place + detail rows for a single place.
  */
 export async function getPlaceDetails(placeId: string) {
   const supabase = createClient();
 
   const [placeRes, detailsRes] = await Promise.all([
-    supabase.from("places").select("*").eq("id", placeId).single(),
+    supabase.from("places").select("*").eq("id", placeId).maybeSingle(),
     supabase
       .from("places_details")
       .select("*")
@@ -188,6 +200,8 @@ export async function getPlaceDetails(placeId: string) {
     console.error("Error fetching place:", placeRes.error);
     return null;
   }
+
+  if (!placeRes.data) return null;
 
   return { place: placeRes.data, details: detailsRes.data };
 }

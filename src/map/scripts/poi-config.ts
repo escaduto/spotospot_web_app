@@ -28,6 +28,7 @@ export const poiCategoryList = [
   "restaurant-seafood",
   "restaurant-bbq",
   "food",
+  "school",
   // accommodation
   "lodging",
   "campsite",
@@ -107,6 +108,8 @@ export const poiCategoryList = [
   "skateboard",
   "stadium",
   "soccer",
+  "baseball",
+  "basketball",
   // transit
   "triangle",
   "pedestrian",
@@ -137,6 +140,8 @@ export const poiCategoryList = [
   "information",
   "toilet",
   "marker",
+  "cemetery",
+  // other
 ] as const;
 
 export const POI_GROUPS: Record<string, POICONFIG> = {
@@ -829,6 +834,12 @@ export const POI_GROUPS: Record<string, POICONFIG> = {
     bgColor: "#EAFAF1",
     icon: "park",
   },
+  meadow: {
+    label: "Meadow",
+    color: "#27AE60",
+    bgColor: "#EAFAF1",
+    icon: "park",
+  },
 
   // ═══ Structure & Geography ═══
   bridge: {
@@ -1408,6 +1419,56 @@ export const POI_GROUPS: Record<string, POICONFIG> = {
     color: "#795548",
     bgColor: "#EFEBE9",
     icon: "toilet",
+  },
+  // education
+  school: {
+    label: "School",
+    color: "#795548",
+    bgColor: "#EFEBE9",
+    icon: "school",
+  },
+  university: {
+    label: "University",
+    color: "#795548",
+    bgColor: "#EFEBE9",
+    icon: "school",
+  },
+  college: {
+    label: "College",
+    color: "#795548",
+    bgColor: "#EFEBE9",
+    icon: "school",
+  },
+  // park amenities
+  basketball_court: {
+    label: "Basketball Court",
+    color: "#27AE60",
+    bgColor: "#EAFAF1",
+    icon: "basketball",
+  },
+  soccer_field: {
+    label: "Soccer Field",
+    color: "#27AE60",
+    bgColor: "#EAFAF1",
+    icon: "soccer",
+  },
+  baseball_field: {
+    label: "Baseball Field",
+    color: "#27AE60",
+    bgColor: "#EAFAF1",
+    icon: "baseball",
+  },
+  recreation_ground: {
+    label: "Recreation Ground",
+    color: "#27AE60",
+    bgColor: "#EAFAF1",
+    icon: "playground",
+  },
+  cemetery: {
+    label: "Cemetery",
+    color: "#795548",
+    bgColor: "#EFEBE9",
+    icon: "cemetery",
   },
 };
 

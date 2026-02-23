@@ -7,7 +7,14 @@ import {
   loadPOIIcons,
   addPOILayers,
   updateHighlightSource,
+  handleLabelClick,
+  clearPolygonHighlight,
+  addDebugLayers,
+  removeDebugLayers,
+  debugQueryRendered,
+  debugFetchTile,
   POI_SOURCE_ID,
+  POI_CIRCLES_LAYER_ID,
   POI_ICON_LAYER_ID,
   POI_HIGHLIGHT_SOURCE_ID,
   POI_HIGHLIGHT_CIRCLE_LAYER_ID,
@@ -98,6 +105,23 @@ export function useDiscoverMap() {
       await loadPOIIcons(map);
       addPOILayers(map);
 
+      // ---- Dev helpers exposed on window (no-op in prod builds if desired) ----
+      if (typeof window !== "undefined") {
+        const w = window as unknown as Record<string, unknown>;
+        w.__map = map;
+        w.__debugPOI = addDebugLayers;
+        w.__debugPOIOff = removeDebugLayers;
+        w.__debugPOIQuery = debugQueryRendered;
+        w.__debugTile = debugFetchTile;
+        console.info(
+          "[POI debug] Console helpers ready:\n" +
+            "  __debugPOI(__map)       — add raw debug layers + tile grid\n" +
+            "  __debugPOIOff(__map)    — remove debug layers\n" +
+            "  __debugPOIQuery(__map)  — log rendered feature counts\n" +
+            "  __debugTile(z, x, y)   — fetch a tile directly and log response",
+        );
+      }
+
       setMapLoaded(true);
     });
 
@@ -105,7 +129,9 @@ export function useDiscoverMap() {
     map.on("moveend", handleViewportChange);
 
     // ── Hover on POI circles / icons ──
-    const poiHoverLayers = [POI_ICON_LAYER_ID];
+    // Both layers show the same hover popup; circles and icons share the same
+    // underlying tile feature so one handler covers both.
+    const poiHoverLayers = [POI_ICON_LAYER_ID, POI_CIRCLES_LAYER_ID];
     const highlightHoverLayers = [
       POI_HIGHLIGHT_CIRCLE_LAYER_ID,
       POI_HIGHLIGHT_ICON_LAYER_ID,
@@ -165,6 +191,7 @@ export function useDiscoverMap() {
           <div class="poi-popup-importance">Popularity: ${(
             Number(props.importance_score) * 100
           ).toFixed(1)}%</div>
+          <div class="poi-popup-hint">${props.category || ""}</div>
         </div>
       `;
 
@@ -249,6 +276,24 @@ export function useDiscoverMap() {
       map.on("mouseleave", layer, clearHover);
     }
 
+    // ---- Click on dot circle: zoom in to reveal icons if needed ----
+    // If the icon is already visible (zoom ≥ 15) the icon-layer click handles
+    // everything; this handler only acts when the user is zoomed out.
+    const handleCircleDotClick = (e: maplibregl.MapLayerMouseEvent) => {
+      if (!e.features?.length) return;
+      const currentZoom = map.getZoom();
+      if (currentZoom >= 15) return; // icon click will handle it
+      const coords = (e.features[0].geometry as GeoJSON.Point).coordinates as [
+        number,
+        number,
+      ];
+      map.flyTo({
+        center: coords,
+        zoom: Math.min(currentZoom + 3, 16),
+        duration: 700,
+      });
+    };
+
     // ---- Click handler for vector tile POIs → fetch full details from DB ----
     const handleVectorPOIClick = async (e: maplibregl.MapLayerMouseEvent) => {
       if (!e.features?.length) return;
@@ -260,6 +305,10 @@ export function useDiscoverMap() {
       ];
       const placeId = props.id as string;
       if (!placeId) return;
+
+      // If this label is backed by a polygon (landuse / building), fetch the
+      // full geometry from Supabase and highlight it.
+      await handleLabelClick(map, feature);
 
       // Show immediately with tile data, then enrich
       const cfg = getPOIConfig(props.category);
@@ -344,19 +393,23 @@ export function useDiscoverMap() {
     };
 
     // Click listeners
-    for (const layer of poiHoverLayers) {
+    map.on("click", POI_CIRCLES_LAYER_ID, handleCircleDotClick);
+    for (const layer of [POI_ICON_LAYER_ID]) {
       map.on("click", layer, handleVectorPOIClick);
     }
     for (const layer of highlightHoverLayers) {
       map.on("click", layer, handleHighlightPOIClick);
     }
 
-    // ---- Click: empty area → deselect ----
+    // ---- Click: empty area → deselect + clear polygon highlight ----
     map.on("click", (e) => {
       const hits = map.queryRenderedFeatures(e.point, {
         layers: INTERACTIVE_LAYERS,
       });
-      if (hits.length === 0) setSelectedPOI(null);
+      if (hits.length === 0) {
+        setSelectedPOI(null);
+        clearPolygonHighlight(map);
+      }
     });
 
     // ---- Controls ----
@@ -404,7 +457,6 @@ export function useDiscoverMap() {
 
         map.fitBounds(bounds, {
           padding: { top: 120, bottom: 120, left: 450, right: 120 },
-          maxZoom: 13, // Don't zoom out too much
           minZoom: 11, // Don't zoom in too close when showing multiple
           duration: 1500,
         });

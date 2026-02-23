@@ -29,7 +29,6 @@ export default function MapView({ days, items, onSelectDay }: Props) {
     zoom: 2,
     mapCenter: [0, 30],
     minZoom: 1,
-    maxZoom: 18,
     enableHillshade: false,
     enableTerrain: false,
     onLoad: handleLoad,
@@ -142,7 +141,7 @@ export default function MapView({ days, items, onSelectDay }: Props) {
     });
 
     if (hasBounds) {
-      mapInstance.fitBounds(bounds, { padding: 60, maxZoom: 12 });
+      mapInstance.fitBounds(bounds, { padding: 60, minZoom: 10, maxZoom: 14 });
     }
   }, [mapInstance, isLoaded, days, items]);
 

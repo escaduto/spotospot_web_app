@@ -1,12 +1,12 @@
 import { useEffect, useRef } from "react";
 import maplibregl, { GeoJSONSource } from "maplibre-gl";
-import type { SeedItineraryItems } from "@/src/supabase/types";
+import type { ItineraryItem } from "@/src/supabase/types";
 import { parsePoint } from "@/src/utils/geo";
 
 interface UseActivityLayersArgs {
   mapRef: React.RefObject<maplibregl.Map | null>;
   mapLoaded: boolean;
-  items: SeedItineraryItems[];
+  items: ItineraryItem[];
   selectedItemId: string | null;
   editingItemId: string | null;
   onSelectItem: (itemId: string) => void;
@@ -44,7 +44,7 @@ export function useActivityLayers({
 
     const features = items
       .map((item, index) => {
-        const coords = parsePoint(item.coords);
+        const coords = parsePoint(item.location_coords);
         if (!coords) return null;
 
         const timeRange = [item.start_time, item.end_time]
@@ -106,7 +106,7 @@ export function useActivityLayers({
     const editItem = items.find((i) => i.id === editingItemId);
     if (!editItem) return;
 
-    const coords = parsePoint(editItem.coords);
+    const coords = parsePoint(editItem.location_coords);
     if (!coords) return;
 
     const el = document.createElement("div");
@@ -253,7 +253,7 @@ export function useActivityLayers({
 
     const selected = items.find((i) => i.id === selectedItemId);
     if (!selected) return;
-    const coords = parsePoint(selected.coords);
+    const coords = parsePoint(selected.location_coords);
     if (!coords) return;
 
     map.flyTo({
@@ -286,4 +286,50 @@ export function useActivityLayers({
       repPointMarkerRef.current = null;
     };
   }, [centerPoint, mapLoaded, mapRef]);
+
+  // ── Post-it note markers for items with notes ──
+  const noteMarkersRef = useRef<maplibregl.Marker[]>([]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+
+    // Clear previous note markers
+    noteMarkersRef.current.forEach((m) => m.remove());
+    noteMarkersRef.current = [];
+
+    items.forEach((item) => {
+      if (!item.notes) return;
+      const coords = parsePoint(item.location_coords);
+      if (!coords) return;
+
+      // Truncate note text for display
+      const noteText =
+        item.notes.length > 80 ? item.notes.slice(0, 77) + "…" : item.notes;
+
+      const el = document.createElement("div");
+      el.className = "postit-note";
+      el.innerHTML = `
+        <div class="postit-note-inner">
+          <div class="postit-note-fold"></div>
+          <p class="postit-note-text">${noteText.replace(/</g, "&lt;")}</p>
+        </div>
+      `;
+
+      const marker = new maplibregl.Marker({
+        element: el,
+        anchor: "bottom-left",
+        offset: [14, -14],
+      })
+        .setLngLat([coords.lng, coords.lat])
+        .addTo(map);
+
+      noteMarkersRef.current.push(marker);
+    });
+
+    return () => {
+      noteMarkersRef.current.forEach((m) => m.remove());
+      noteMarkersRef.current = [];
+    };
+  }, [items, mapLoaded, mapRef]);
 }

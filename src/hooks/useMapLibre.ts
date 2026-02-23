@@ -25,7 +25,7 @@ export const useMapLibre = ({
   zoom = 9,
   mapCenter = [-122.4107, 37.7784],
   minZoom = 4,
-  maxZoom = 18,
+  maxZoom = 22,
   enableHillshade = false,
   enableTerrain = false,
   onLoad,

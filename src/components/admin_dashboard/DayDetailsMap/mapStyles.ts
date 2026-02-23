@@ -174,20 +174,6 @@ export const routeLine: maplibregl.LayerSpecification = {
   },
 };
 
-/** Background pill behind the route badge (rendered as a circle layer on midpoints) */
-export const routeBadgeBg: maplibregl.LayerSpecification = {
-  id: "routes-badge-bg",
-  type: "circle",
-  source: "route-midpoints",
-  paint: {
-    "circle-radius": 14,
-    "circle-color": "#ffffff",
-    "circle-stroke-width": 2,
-    "circle-stroke-color": ["get", "color"],
-    "circle-opacity": 0.95,
-  },
-};
-
 /** Combined icon + distance label placed at route midpoints */
 export const routeBadge: maplibregl.LayerSpecification = {
   id: "routes-badge",
@@ -195,15 +181,15 @@ export const routeBadge: maplibregl.LayerSpecification = {
   source: "route-midpoints",
   layout: {
     "icon-image": ["get", "icon"],
-    "icon-size": 0.9,
+    "icon-size": 0.5,
     "icon-anchor": "center",
     "text-field": ["get", "distanceLabel"],
     "text-size": 11,
-    "text-font": ["Open Sans Semibold", "Arial Unicode MS Bold"],
+    "text-font": ["Open Sans Regular", "Arial Unicode MS Bold"],
     "text-anchor": "left",
     "text-offset": [1.6, 0],
-    "icon-allow-overlap": true,
-    "text-allow-overlap": true,
+    "icon-allow-overlap": false,
+    "text-allow-overlap": false,
     "icon-ignore-placement": true,
     "text-ignore-placement": true,
   },
