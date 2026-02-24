@@ -102,11 +102,34 @@ function stripOuterSvg(svg) {
     .trim();
 }
 
+// ─── Compose flat square SVG for transit icons ───
+function composeSvgSquareFlat(innerPaths, viewBox, color) {
+  const iconSide = SIZE * 0.8;
+  const iconOffset = (SIZE - iconSide) / 2;
+  const cornerRadius = Math.round(SIZE * 0.15); // ~7 px at 48 px
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${SIZE}" viewBox="0 0 ${SIZE} ${SIZE}">
+  <!-- Square flat background -->
+  <rect x="0" y="0" width="${SIZE}" height="${SIZE}" rx="${cornerRadius}" ry="${cornerRadius}" fill="${color}"/>
+
+  <!-- Inner icon -->
+  <svg x="${iconOffset}" y="${iconOffset}"
+       width="${iconSide}" height="${iconSide}"
+       viewBox="${viewBox}">
+    <g fill="white">
+      ${innerPaths}
+    </g>
+  </svg>
+</svg>`;
+}
+
 // ─── Compose final SVG with glossy circle + white icon ───
 function composeSvg(innerPaths, viewBox, color) {
   const cx = SIZE / 2;
   const cy = SIZE / 2;
   const r = SIZE / 2;
+  const border = 2; // white border thickness in px
+  const ri = r - border; // inner radius (colored area)
 
   // The inner icon area (centered square inside the circle)
   const iconSide = SIZE * ICON_RATIO;
@@ -132,12 +155,14 @@ function composeSvg(innerPaths, viewBox, color) {
     </radialGradient>
   </defs>
 
+  <!-- White border ring -->
+  <circle cx="${cx}" cy="${cy}" r="${r}" fill="white"/>
   <!-- Circle background -->
-  <circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#bg)"/>
+  <circle cx="${cx}" cy="${cy}" r="${ri}" fill="url(#bg)"/>
   <!-- Bottom shadow -->
-  <circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#shd)"/>
+  <circle cx="${cx}" cy="${cy}" r="${ri}" fill="url(#shd)"/>
   <!-- Glossy top highlight -->
-  <ellipse cx="${cx}" cy="${cy * 0.72}" rx="${r * 0.8}" ry="${r * 0.55}" fill="url(#gloss)"/>
+  <ellipse cx="${cx}" cy="${cy * 0.72}" rx="${ri * 0.8}" ry="${ri * 0.55}" fill="url(#gloss)"/>
 
   <!-- Inner icon: nested <svg> normalises any viewBox to the icon area -->
   <svg x="${iconOffset}" y="${iconOffset}"
@@ -172,7 +197,11 @@ async function convertIcons() {
       const viewBox = extractViewBox(rawSvg);
       const innerPaths = stripOuterSvg(rawSvg);
       const color = iconColorMap.get(iconName) ?? defaultColor;
-      const finalSvg = composeSvg(innerPaths, viewBox, color);
+      const TRANSIT_COLOR = "#729bb0";
+      const finalSvg =
+        color === TRANSIT_COLOR
+          ? composeSvgSquareFlat(innerPaths, viewBox, color)
+          : composeSvg(innerPaths, viewBox, color);
 
       await sharp(Buffer.from(finalSvg))
         .resize(SIZE, SIZE)

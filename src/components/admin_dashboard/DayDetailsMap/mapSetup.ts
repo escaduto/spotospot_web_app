@@ -8,6 +8,7 @@ import {
   routeLine,
   routeBadge,
 } from "./mapStyles";
+import { addPOILayers } from "@/src/map/scripts/poi-layers";
 
 /**
  * Registers all GeoJSON sources and their layers once the map is loaded.
@@ -22,6 +23,8 @@ function setUpMapLayers(map: maplibregl.Map) {
     const image = await map.loadImage(`/icons/${category}.png`);
     map.addImage(category, image.data);
   });
+
+  addPOILayers(map);
 
   // ── Routes source (lines rendered below points) ──
   map.addSource("routes", {
