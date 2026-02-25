@@ -80,8 +80,7 @@ const TRANSPORT_CONFIGS: Record<string, TransportConfig> = {
   train: {
     label: "Train",
     icon: "rail",
-    color: "#ef4444", // red-500
-    dashArray: [10, 4],
+    color: "#4f4f4f", // gray-500
     emoji: "🚆",
   },
   bus: {

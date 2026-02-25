@@ -287,49 +287,49 @@ export function useActivityLayers({
     };
   }, [centerPoint, mapLoaded, mapRef]);
 
-  // ── Post-it note markers for items with notes ──
-  const noteMarkersRef = useRef<maplibregl.Marker[]>([]);
+  // // ── Post-it note markers for items with notes ──
+  // const noteMarkersRef = useRef<maplibregl.Marker[]>([]);
 
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapLoaded) return;
+  // useEffect(() => {
+  //   const map = mapRef.current;
+  //   if (!map || !mapLoaded) return;
 
-    // Clear previous note markers
-    noteMarkersRef.current.forEach((m) => m.remove());
-    noteMarkersRef.current = [];
+  //   // Clear previous note markers
+  //   noteMarkersRef.current.forEach((m) => m.remove());
+  //   noteMarkersRef.current = [];
 
-    items.forEach((item) => {
-      if (!item.notes) return;
-      const coords = parsePoint(item.location_coords);
-      if (!coords) return;
+  //   items.forEach((item) => {
+  //     if (!item.notes) return;
+  //     const coords = parsePoint(item.location_coords);
+  //     if (!coords) return;
 
-      // Truncate note text for display
-      const noteText =
-        item.notes.length > 80 ? item.notes.slice(0, 77) + "…" : item.notes;
+  //     // Truncate note text for display
+  //     const noteText =
+  //       item.notes.length > 80 ? item.notes.slice(0, 77) + "…" : item.notes;
 
-      const el = document.createElement("div");
-      el.className = "postit-note";
-      el.innerHTML = `
-        <div class="postit-note-inner">
-          <div class="postit-note-fold"></div>
-          <p class="postit-note-text">${noteText.replace(/</g, "&lt;")}</p>
-        </div>
-      `;
+  //     const el = document.createElement("div");
+  //     el.className = "postit-note";
+  //     el.innerHTML = `
+  //       <div class="postit-note-inner">
+  //         <div class="postit-note-fold"></div>
+  //         <p class="postit-note-text">${noteText.replace(/</g, "&lt;")}</p>
+  //       </div>
+  //     `;
 
-      const marker = new maplibregl.Marker({
-        element: el,
-        anchor: "bottom-left",
-        offset: [14, -14],
-      })
-        .setLngLat([coords.lng, coords.lat])
-        .addTo(map);
+  //     const marker = new maplibregl.Marker({
+  //       element: el,
+  //       anchor: "bottom-left",
+  //       offset: [14, -14],
+  //     })
+  //       .setLngLat([coords.lng, coords.lat])
+  //       .addTo(map);
 
-      noteMarkersRef.current.push(marker);
-    });
+  //     noteMarkersRef.current.push(marker);
+  //   });
 
-    return () => {
-      noteMarkersRef.current.forEach((m) => m.remove());
-      noteMarkersRef.current = [];
-    };
-  }, [items, mapLoaded, mapRef]);
+  //   return () => {
+  //     noteMarkersRef.current.forEach((m) => m.remove());
+  //     noteMarkersRef.current = [];
+  //   };
+  // }, [items, mapLoaded, mapRef]);
 }

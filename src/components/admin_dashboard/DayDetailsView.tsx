@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import type {
   ItineraryDay,
   ItineraryItem,
@@ -10,11 +10,20 @@ import { createClient } from "@/src/supabase/client";
 import Image from "next/image";
 import { parsePoint } from "@/src/utils/geo";
 import PhotoSearchModal from "./PhotoSearchModal";
-import ActivityItem from "./ActivityItem";
+import ActivitySchedule from "./ActivitySchedule";
 import ActivityEditor from "./ActivityEditor";
-import RouteSegment from "./RouteSegment";
 import { PlacePointResult } from "@/src/supabase/places";
 import DayDetailsMap from "./DayDetailsMap/DayDetailsMap";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+import AddIcon from "@mui/icons-material/Add";
+import DeleteIcon from "@mui/icons-material/Delete";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
+import CalendarTodayIcon from "@mui/icons-material/CalendarToday";
+import LocationOnIcon from "@mui/icons-material/LocationOn";
+import CheckIcon from "@mui/icons-material/Check";
+import CloseIcon from "@mui/icons-material/Close";
 
 interface Props {
   day: ItineraryDay;
@@ -32,75 +41,29 @@ export default function DayDetailsView({
   refetch,
 }: Props) {
   const supabase = createClient();
-  const [editingDay, setEditingDay] = useState(false);
   const [showPhotoSearch, setShowPhotoSearch] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [addingItem, setAddingItem] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  // Default to first activity so the map centres on it on load
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(
+    () =>
+      [...items].sort((a, b) => a.order_index - b.order_index)[0]?.id ?? null,
+  );
+  const [panelOpen, setPanelOpen] = useState(true);
   const [searchPOIs, setSearchPOIs] = useState<PlacePointResult[]>([]);
+  const [hoveredSearchPOIId, setHoveredSearchPOIId] = useState<string | null>(
+    null,
+  );
   const [mapSelectedPOI, setMapSelectedPOI] = useState<PlacePointResult | null>(
     null,
   );
   const [dragFromIdx, setDragFromIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const isApproved = day.visibility === "public";
-
-  const [dayForm, setDayForm] = useState({
-    title: day.title ?? "",
-    city: day.city ?? "",
-    country: day.country ?? "",
-    description: day.description ?? "",
-    category_type: day.category_type ?? ([] as string[]),
-    notes: day.notes ?? "",
-  });
-
-  // Sync form when the day prop changes (e.g. after refetch)
-  const [prevDayId, setPrevDayId] = useState(day.id);
-  if (prevDayId !== day.id) {
-    setPrevDayId(day.id);
-    setDayForm({
-      title: day.title ?? "",
-      city: day.city ?? "",
-      country: day.country ?? "",
-      description: day.description ?? "",
-      category_type: day.category_type ?? [],
-      notes: day.notes ?? "",
-    });
-  }
-
-  const handleSaveDay = async () => {
-    setBusy(true);
-    // Only send fields that have a value (avoid sending columns that might not match DB)
-    const payload: Record<string, string | null> = {
-      title: dayForm.title || day.title, // title is required, fallback to existing
-    };
-    // Only include optional fields if they changed
-    if (dayForm.city !== (day.city ?? "")) payload.city = dayForm.city || null;
-    if (dayForm.country !== (day.country ?? ""))
-      payload.country = dayForm.country || null;
-    if (dayForm.description !== (day.description ?? ""))
-      payload.description = dayForm.description || null;
-    if (dayForm.category_type !== (day.category_type ?? ""))
-      payload.category_type = dayForm.category_type[0] || null;
-    if (dayForm.notes !== (day.notes ?? ""))
-      payload.notes = dayForm.notes || null;
-
-    const { error } = await supabase
-      .from("itinerary_days")
-      .update(payload)
-      .eq("id", day.id);
-
-    if (error) {
-      console.error("Error updating day:", error);
-      alert("Failed to save changes. Please try again.");
-    } else {
-      setEditingDay(false);
-      refetch();
-    }
-    setBusy(false);
-  };
 
   const handlePhotoSelect = async (
     url: string,
@@ -165,12 +128,11 @@ export default function DayDetailsView({
 
   const handleUpdateRouteTransportTypes = async (
     routeId: string,
-    transportationTypes: string[],
+    types: string[],
   ) => {
-    // Update the route's transportation_type array
     await supabase
       .from("itinerary_item_routes")
-      .update({ transportation_type: transportationTypes })
+      .update({ transportation_type: types })
       .eq("id", routeId);
     refetch();
   };
@@ -239,299 +201,393 @@ export default function DayDetailsView({
     setMapSelectedPOI(null);
   };
 
+  // Quick-add from map POI click
+  const handleQuickAddActivity = async (data: Partial<ItineraryItem>) => {
+    const supabase = createClient();
+    await supabase
+      .from("itinerary_items")
+      .insert({ ...data, itinerary_day_id: day.id } as Omit<
+        ItineraryItem,
+        "id"
+      >);
+    refetch();
+  };
+
   // Parse rep_point for display
   const repPointParsed = parsePoint(day.rep_point);
 
+  // Get the item currently being edited (for the right-side modal)
+  const editingItem = editingItemId
+    ? items.find((i) => i.id === editingItemId)
+    : null;
+
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b px-6 py-4 shrink-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={onBack}
-              className="text-gray-600 hover:text-gray-900"
-            >
-              ← Back
-            </button>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">{day.title}</h1>
-              <p className="text-sm text-gray-500">
-                {[day.city, day.country].filter(Boolean).join(", ")}
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleApprove}
-              disabled={busy || isApproved}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-40"
-            >
-              ✓ Approve
-            </button>
-            <button
-              onClick={handleReject}
-              disabled={busy || isApproved || day.visibility === "private"}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-40"
-            >
-              ✗ Reject
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main split view */}
-      <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* Map side */}
-        <div className="w-2/3 relative" style={{ minHeight: "100%" }}>
-          <DayDetailsMap
-            items={items}
-            selectedItemId={selectedItemId}
-            editingItemId={editingItemId}
-            onSelectItem={setSelectedItemId}
-            onUpdateCoords={async (itemId, lng, lat) => {
-              // Update the item's coordinates
-              const geoPoint = `POINT(${lng} ${lat})`;
-              await supabase
-                .from("itinerary_items")
-                .update({ location_coords: geoPoint })
-                .eq("id", itemId);
-              refetch();
-            }}
-            centerPoint={repPointParsed}
-            searchPOIs={editingItemId || addingItem ? searchPOIs : []}
-            onSelectSearchPOI={setMapSelectedPOI}
-            routes={routes}
-          />
-          {editingItemId && (
-            <div className="absolute top-4 left-4 bg-yellow-100 border-2 border-yellow-500 px-4 py-2 rounded-lg shadow-lg">
-              <p className="text-sm font-medium text-yellow-900">
-                📍 Click map to place marker or drag to move
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Activities side */}
-        <div className="w-1/3 bg-white border-l overflow-y-auto">
-          <div className="p-6 space-y-6">
-            {/* Image preview */}
-            {day.image_url && (
-              <div className="relative h-48 rounded-lg overflow-hidden">
-                <Image
-                  src={day.image_url}
-                  alt={day.title ?? "Day image"}
-                  fill
-                  className="object-cover"
-                />
-                <button
-                  onClick={() => setShowPhotoSearch(true)}
-                  disabled={isApproved}
-                  className="absolute bottom-2 right-2 bg-white/90 text-xs px-2 py-1 rounded font-medium hover:bg-white disabled:opacity-40"
-                >
-                  📷 Change
-                </button>
-              </div>
-            )}
-
-            {/* Status badge */}
-            {isApproved && (
-              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-2 rounded-lg text-sm font-medium">
-                ✓ Approved (editing disabled)
-              </div>
-            )}
-
-            {/* Day details */}
-            {editingDay ? (
-              <div className="space-y-3">
-                <input
-                  type="text"
-                  value={dayForm.title}
-                  onChange={(e) =>
-                    setDayForm((f) => ({ ...f, title: e.target.value }))
-                  }
-                  className="w-full border rounded-lg px-3 py-2 text-sm"
-                  placeholder="Title"
-                />
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    value={dayForm.city}
-                    onChange={(e) =>
-                      setDayForm((f) => ({ ...f, city: e.target.value }))
-                    }
-                    className="border rounded-lg px-3 py-2 text-sm"
-                    placeholder="City"
-                  />
-                  <input
-                    type="text"
-                    value={dayForm.country}
-                    onChange={(e) =>
-                      setDayForm((f) => ({ ...f, country: e.target.value }))
-                    }
-                    className="border rounded-lg px-3 py-2 text-sm"
-                    placeholder="Country"
-                  />
-                </div>
-                <textarea
-                  value={dayForm.description}
-                  onChange={(e) =>
-                    setDayForm((f) => ({ ...f, description: e.target.value }))
-                  }
-                  className="w-full border rounded-lg px-3 py-2 text-sm"
-                  rows={3}
-                  placeholder="Description"
-                />
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleSaveDay}
-                    disabled={busy}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={() => setEditingDay(false)}
-                    className="text-sm text-gray-500 underline"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {day.description && (
-                  <p className="text-sm text-gray-600">{day.description}</p>
-                )}
-                <button
-                  onClick={() => setEditingDay(true)}
-                  disabled={isApproved}
-                  className="text-sm text-blue-600 underline disabled:opacity-40"
-                >
-                  Edit Details
-                </button>
-              </div>
-            )}
-
-            {/* Activities */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-gray-900">
-                  Activities ({items.length})
-                </h3>
-                <button
-                  onClick={() => setAddingItem(true)}
-                  disabled={isApproved}
-                  className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg font-medium disabled:opacity-40"
-                >
-                  + Add
-                </button>
-              </div>
-
-              <div className="space-y-0">
-                {(() => {
-                  const sorted = [...items].sort(
-                    (a, b) => a.order_index - b.order_index,
-                  );
-
-                  // Build a lookup: from_item_id -> route
-                  const routeByFromItem = new Map(
-                    (routes ?? [])
-                      .filter((r) => r.from_item_id)
-                      .map((r) => [r.from_item_id!, r]),
-                  );
-
-                  return sorted.flatMap((item, idx) => {
-                    const elements = [];
-
-                    // Render the activity item or editor
-                    elements.push(
-                      editingItemId === item.id ? (
-                        <ActivityEditor
-                          key={item.id}
-                          item={item}
-                          dayId={day.id}
-                          onSave={(updates) =>
-                            handleUpdateItem(item.id, updates)
-                          }
-                          onCancel={handleCancelEditing}
-                          onDelete={() => handleDeleteItem(item.id)}
-                          mapCenter={repPointParsed ?? undefined}
-                          onSearchResultsChange={setSearchPOIs}
-                          mapSelectedPOI={mapSelectedPOI}
-                          onMapPOIConsumed={() => setMapSelectedPOI(null)}
-                        />
-                      ) : (
-                        <ActivityItem
-                          key={item.id}
-                          item={item}
-                          index={idx}
-                          isSelected={selectedItemId === item.id}
-                          onSelect={() => setSelectedItemId(item.id)}
-                          onEdit={() => setEditingItemId(item.id)}
-                          disabled={isApproved || busy}
-                          onDragStart={setDragFromIdx}
-                          onDragOver={setDragOverIdx}
-                          onDragEnd={() => {
-                            if (
-                              dragFromIdx != null &&
-                              dragOverIdx != null &&
-                              dragFromIdx !== dragOverIdx
-                            ) {
-                              handleReorder(dragFromIdx, dragOverIdx);
-                            }
-                            setDragFromIdx(null);
-                            setDragOverIdx(null);
-                          }}
-                          isDragOver={
-                            dragOverIdx === idx && dragFromIdx !== idx
-                          }
-                          isDragging={dragFromIdx === idx}
-                        />
-                      ),
-                    );
-
-                    // Render route segment after this item (if route exists to next item)
-                    const route = routeByFromItem.get(item.id);
-                    if (route && idx < sorted.length - 1) {
-                      elements.push(
-                        <RouteSegment
-                          key={`route-${route.id}`}
-                          route={route}
-                          disabled={isApproved || busy}
-                          onUpdateTransportTypes={
-                            handleUpdateRouteTransportTypes
-                          }
-                        />,
-                      );
-                    }
-
-                    return elements;
-                  });
-                })()}
-
-                {addingItem && (
-                  <ActivityEditor
-                    dayId={day.id}
-                    nextIndex={
-                      items.length > 0
-                        ? Math.max(...items.map((i) => i.order_index)) + 1
-                        : 1
-                    }
-                    onSave={handleAddItem}
-                    onCancel={handleCancelAdding}
-                    mapCenter={repPointParsed ?? undefined}
-                    onSearchResultsChange={setSearchPOIs}
-                    mapSelectedPOI={mapSelectedPOI}
-                    onMapPOIConsumed={() => setMapSelectedPOI(null)}
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+    <div className="relative h-screen overflow-hidden bg-gray-900">
+      {/* Full-screen map */}
+      <div className="absolute inset-0 z-0">
+        <DayDetailsMap
+          items={items}
+          selectedItemId={selectedItemId}
+          editingItemId={editingItemId}
+          onSelectItem={setSelectedItemId}
+          onUpdateCoords={async (itemId, lng, lat) => {
+            const geoPoint = `POINT(${lng} ${lat})`;
+            await supabase
+              .from("itinerary_items")
+              .update({ location_coords: geoPoint })
+              .eq("id", itemId);
+            refetch();
+          }}
+          centerPoint={repPointParsed}
+          searchPOIs={editingItemId || addingItem ? searchPOIs : []}
+          onSelectSearchPOI={setMapSelectedPOI}
+          hoveredSearchPOIId={
+            editingItemId || addingItem ? hoveredSearchPOIId : null
+          }
+          routes={routes}
+          onQuickAddActivity={handleQuickAddActivity}
+          isApproved={isApproved}
+        />
       </div>
 
+      {/* ── Left floating panel ──────────────────────────────────── */}
+      <div
+        className={`absolute left-0 top-0 bottom-0 z-10 flex transition-all duration-300 ${
+          panelOpen ? "w-1/2 md:w-1/3 lg:w-1/4" : "w-0"
+        }`}
+      >
+        {/* Panel body */}
+        <div
+          ref={scrollRef}
+          onScroll={() =>
+            setHeaderCollapsed((scrollRef.current?.scrollTop ?? 0) > 10)
+          }
+          className={`flex-1 flex flex-col overflow-y-auto pb-50 bg-white/60 backdrop-blur-sm shadow-2xl transition-opacity duration-300 ${
+            panelOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+          }`}
+        >
+          {/* Sticky compact header (visible when scrolled past threshold) */}
+          <div
+            className={`sticky top-0 z-10 bg-white/60 backdrop-blur-sm border-b border-gray-100 shrink-0 transition-all duration-200 overflow-hidden ${
+              headerCollapsed ? "h-12 shadow-sm" : "h-0"
+            }`}
+          >
+            <div className="px-3 h-10 flex items-center gap-2">
+              <button
+                onClick={onBack}
+                className="text-gray-500 hover:text-gray-800 shrink-0 flex items-center"
+              >
+                <ArrowBackIcon style={{ fontSize: 16 }} />
+              </button>
+              <div className="flex-1 truncate mt-2">
+                <h1 className="font-bold text-sm text-gray-900 truncate">
+                  {day.title}
+                </h1>
+                {(day.city || day.country) && (
+                  <p className="text-[11px] text-gray-500 flex items-center gap-0.5">
+                    <LocationOnIcon style={{ fontSize: 11 }} />
+                    {[day.city, day.country].filter(Boolean).join(", ")}
+                  </p>
+                )}
+              </div>
+
+              <span
+                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${
+                  isApproved
+                    ? "bg-green-100 text-green-700"
+                    : "bg-amber-100 text-amber-700"
+                }`}
+              >
+                {isApproved ? "Public" : "Draft"}
+              </span>
+            </div>
+          </div>
+
+          {/* Animated collapsible full header */}
+          <div
+            className={`shrink-0 overflow-hidden transition-all duration-300 ${
+              headerCollapsed ? "max-h-0" : "max-h-150"
+            }`}
+          >
+            {/* ── Section 1: Day plan info ─────────────────── */}
+            <div className="shrink-0">
+              {/* Day image header */}
+              {day.image_url ? (
+                <div className="relative h-70 w-full">
+                  {day.image_url ? (
+                    <Image
+                      src={day.image_url}
+                      alt={day.title ?? "Day image"}
+                      fill
+                      className="object-cover"
+                    />
+                  ) : null}
+                  {/* Gradient overlay */}
+                  <div className="absolute inset-0 bg-linear-to-t from-black/60 via-black/20 to-transparent" />
+                  {/* Back button */}
+                  <button
+                    onClick={onBack}
+                    className="absolute top-3 left-3 text-white/90 hover:text-white text-sm font-medium flex items-center gap-1"
+                  >
+                    <ArrowBackIcon style={{ fontSize: 16 }} /> Back
+                  </button>
+                  {/* Photo change */}
+                  <button
+                    onClick={() => setShowPhotoSearch(true)}
+                    disabled={isApproved}
+                    className="absolute top-3 right-3 text-[10px] bg-white/20 hover:bg-white/40 text-white px-2 py-1 rounded-full backdrop-blur-sm transition disabled:opacity-0"
+                  >
+                    <PhotoCameraIcon style={{ fontSize: 14 }} />
+                  </button>
+                  {/* Title over image */}
+                  <div className="absolute bottom-3 left-3 right-3">
+                    <h1 className="text-white font-bold text-sm leading-tight line-clamp-2">
+                      {day.title}
+                    </h1>
+                    {(day.city || day.country) && (
+                      <p className="text-white/70 text-[11px] mt-0.5 flex items-center gap-0.5">
+                        <LocationOnIcon style={{ fontSize: 11 }} />
+                        {[day.city, day.country].filter(Boolean).join(", ")}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                /* No image: compact header */
+                <div className="p-3 pb-2 border-b border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={onBack}
+                      className="text-gray-500 hover:text-gray-800 text-xs flex items-center gap-1"
+                    >
+                      <ArrowBackIcon style={{ fontSize: 14 }} /> Back
+                    </button>
+                    <button
+                      onClick={() => setShowPhotoSearch(true)}
+                      disabled={isApproved}
+                      className="text-[10px] text-gray-400 hover:text-gray-600 disabled:opacity-30 flex items-center"
+                    >
+                      <PhotoCameraIcon style={{ fontSize: 14 }} />
+                    </button>
+                  </div>
+                  <h1 className="font-bold text-sm text-gray-900 mt-1.5 leading-tight">
+                    {day.title}
+                  </h1>
+                  {(day.city || day.country) && (
+                    <p className="text-[11px] text-gray-500 mt-0.5 flex items-center gap-0.5">
+                      <LocationOnIcon style={{ fontSize: 11 }} />
+                      {[day.city, day.country].filter(Boolean).join(", ")}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Stats + controls row */}
+              <div className="px-3 py-2 flex items-center gap-2 flex-wrap border-b border-gray-100">
+                {/* Activity count */}
+                <span className="text-[11px] font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
+                  {items.length}{" "}
+                  {items.length === 1 ? "activity" : "activities"}
+                </span>
+
+                {/* Date */}
+                {day.date && (
+                  <span className="text-[11px] text-gray-500 flex items-center gap-0.5">
+                    <CalendarTodayIcon style={{ fontSize: 11 }} />{" "}
+                    {new Date(day.date).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </span>
+                )}
+
+                {/* Status badge */}
+                <span
+                  className={`ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full inline-flex items-center gap-0.5 ${
+                    isApproved
+                      ? "bg-green-100 text-green-700"
+                      : "bg-amber-100 text-amber-700"
+                  }`}
+                >
+                  {isApproved ? (
+                    <>
+                      <CheckIcon style={{ fontSize: 10 }} /> Public
+                    </>
+                  ) : (
+                    "Draft"
+                  )}
+                </span>
+
+                {/* Approve / reject */}
+                {!isApproved ? (
+                  <button
+                    onClick={handleApprove}
+                    disabled={busy}
+                    className="text-[11px] bg-green-600 text-white px-2 py-0.5 rounded-full font-medium disabled:opacity-40 hover:bg-green-700 transition"
+                  >
+                    Approve
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleReject}
+                    disabled={busy}
+                    className="text-[11px] bg-red-500 text-white px-2 py-0.5 rounded-full font-medium disabled:opacity-40 hover:bg-red-600 transition"
+                  >
+                    Unpublish
+                  </button>
+                )}
+              </div>
+
+              {/* Category chips */}
+              {day.category_type && day.category_type.length > 0 && (
+                <div className="px-3 py-1.5 flex flex-wrap gap-1 border-b border-gray-100">
+                  {day.category_type.map((c) => (
+                    <span
+                      key={c}
+                      className="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium capitalize"
+                    >
+                      {c.replace(/_/g, " ")}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>{" "}
+            {/* end animated collapsible header */}
+          </div>
+          {/* ── Section 2: Activities ─────────────────────── */}
+          <div className="flex-1">
+            {/* Section header */}
+            <div className="flex items-center justify-between px-3 pt-3 pb-1">
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">
+                Schedule
+              </p>
+              {!isApproved && (
+                <button
+                  onClick={() => setAddingItem(true)}
+                  disabled={addingItem}
+                  className="text-[11px] text-blue-600 hover:text-blue-800 font-medium disabled:opacity-40"
+                >
+                  <AddIcon />
+                </button>
+              )}
+            </div>
+
+            <div className="px-1 pb-4">
+              <ActivitySchedule
+                items={items}
+                routes={routes}
+                selectedItemId={selectedItemId}
+                editingItemId={editingItemId}
+                dayId={day.id}
+                isApproved={isApproved}
+                busy={busy}
+                mapCenter={repPointParsed ?? undefined}
+                mapSelectedPOI={mapSelectedPOI}
+                onSelect={setSelectedItemId}
+                onEdit={(id) => {
+                  setEditingItemId(id);
+                  setAddingItem(false);
+                }}
+                onCancelEdit={handleCancelEditing}
+                onSaveEdit={handleUpdateItem}
+                onDelete={handleDeleteItem}
+                onUpdateTransportTypes={handleUpdateRouteTransportTypes}
+                onSearchResultsChange={setSearchPOIs}
+                onHoverSearchResult={setHoveredSearchPOIId}
+                onMapPOIConsumed={() => setMapSelectedPOI(null)}
+                addingItem={addingItem}
+                nextIndex={
+                  items.length > 0
+                    ? Math.max(...items.map((i) => i.order_index)) + 1
+                    : 1
+                }
+                onSaveNew={handleAddItem}
+                onCancelNew={handleCancelAdding}
+                onDragStart={setDragFromIdx}
+                onDragOver={setDragOverIdx}
+                onDragEnd={() => {
+                  if (
+                    dragFromIdx != null &&
+                    dragOverIdx != null &&
+                    dragFromIdx !== dragOverIdx
+                  ) {
+                    handleReorder(dragFromIdx, dragOverIdx);
+                  }
+                  setDragFromIdx(null);
+                  setDragOverIdx(null);
+                }}
+                dragFromIdx={dragFromIdx}
+                dragOverIdx={dragOverIdx}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Collapse / expand toggle — sticks out from right edge */}
+        <button
+          onClick={() => setPanelOpen((p) => !p)}
+          className="absolute -right-6 top-1/2 -translate-y-1/2 w-6 h-12 bg-white rounded-r-xl shadow-md border border-gray-200 border-l-0 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition z-20"
+          title={panelOpen ? "Collapse panel" : "Expand panel"}
+        >
+          {panelOpen ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+        </button>
+      </div>
+
+      {/* ── Right edit modal (when editing an existing item) ─── */}
+      {editingItemId && editingItem && (
+        <div className="absolute right-0 top-0 bottom-0 z-20 w-1/3 md:w-1/4 bg-white shadow-2xl flex flex-col overflow-hidden border-l border-gray-200">
+          {/* Modal header */}
+          <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Edit Activity
+              </p>
+              <p className="text-sm font-bold text-gray-900 leading-tight truncate max-w-55">
+                {editingItem.title}
+              </p>
+            </div>
+            <button
+              onClick={handleCancelEditing}
+              className="w-7 h-7 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-700 transition"
+            >
+              <CloseIcon style={{ fontSize: 16 }} />
+            </button>
+          </div>
+
+          {/* Editor */}
+          <div className="flex-1 overflow-y-auto p-4">
+            <ActivityEditor
+              key={editingItemId ?? "edit"}
+              item={editingItem}
+              dayId={day.id}
+              onSave={(updates) => handleUpdateItem(editingItemId, updates)}
+              onCancel={handleCancelEditing}
+              mapCenter={repPointParsed ?? undefined}
+              onSearchResultsChange={setSearchPOIs}
+              onHoverSearchResult={setHoveredSearchPOIId}
+              mapSelectedPOI={mapSelectedPOI}
+              onMapPOIConsumed={() => setMapSelectedPOI(null)}
+            />
+            {/* Delete button */}
+            {!isApproved && (
+              <div className="shrink-0 px-4 py-2 border-b border-gray-100">
+                <button
+                  onClick={async () => {
+                    if (confirm("Delete this activity?"))
+                      await handleDeleteItem(editingItemId);
+                  }}
+                  disabled={busy}
+                  className="text-xs text-gray-500 hover:text-red-700 font-medium disabled:opacity-40 flex items-center gap-1"
+                >
+                  <DeleteIcon style={{ fontSize: 14 }} /> Delete activity
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Photo search modal */}
       {showPhotoSearch && (
         <PhotoSearchModal
           query={`${day.city ?? ""} ${day.country ?? ""} ${day.title}`.trim()}

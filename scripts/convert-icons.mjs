@@ -10,6 +10,26 @@ const outputDir = "./public/icons";
 const SIZE = 48; // px – final PNG dimensions
 const ICON_RATIO = 0.55; // icon occupies 55% of the circle diameter
 
+// ─── Transport icon → route-line color map ───
+// Colors match transport-config.ts for visual consistency with route lines
+const TRANSPORT_ICON_COLORS = {
+  pedestrian_t: "#22c55e", // walking - green-500
+  cross_country_skiing_t: "#16a34a", // running - green-600
+  climbing_t: "#15803d", // hiking - green-700
+  car_t: "#3b82f6", // driving - blue-500
+  taxi_t: "#2563eb", // rideshare - blue-600
+  "car-rental_t": "#1d4ed8", // car rental - blue-700
+  bicycle_t: "#f97316", // cycling - orange-500
+  "bicycle-share_t": "#ea580c", // bikeshare - orange-600
+  airport_t: "#8b5cf6", // flight - violet-500
+  ferry_t: "#06b6d4", // ferry - cyan-500
+  rail_t: "#ef4444", // train - red-500
+  bus_t: "#eab308", // bus - yellow-500
+  "rail-light_t": "#d97706", // tram - amber-600
+  triangle_t: "#a855f7", // multiple - purple-500
+  marker_t: "#6b7280", // other/default - gray-500
+};
+
 // ─── Build icon-filename → color map from poi-config.ts ───
 function buildIconColorMap() {
   const configPath = path.resolve("src/map/scripts/poi-config.ts");
@@ -197,11 +217,18 @@ async function convertIcons() {
       const viewBox = extractViewBox(rawSvg);
       const innerPaths = stripOuterSvg(rawSvg);
       const color = iconColorMap.get(iconName) ?? defaultColor;
+      const isTransport = Object.prototype.hasOwnProperty.call(
+        TRANSPORT_ICON_COLORS,
+        iconName,
+      );
+      const effectiveColor = isTransport
+        ? TRANSPORT_ICON_COLORS[iconName]
+        : color;
       const TRANSIT_COLOR = "#729bb0";
       const finalSvg =
-        color === TRANSIT_COLOR
-          ? composeSvgSquareFlat(innerPaths, viewBox, color)
-          : composeSvg(innerPaths, viewBox, color);
+        isTransport || color === TRANSIT_COLOR
+          ? composeSvgSquareFlat(innerPaths, viewBox, effectiveColor)
+          : composeSvg(innerPaths, viewBox, effectiveColor);
 
       await sharp(Buffer.from(finalSvg))
         .resize(SIZE, SIZE)
@@ -209,7 +236,8 @@ async function convertIcons() {
         .toFile(outputPath);
 
       converted++;
-      console.log(`✓ ${iconName} (${color}) [${viewBox}]`);
+      const style = isTransport ? " [transport-flat]" : "";
+      console.log(`✓ ${iconName} (${effectiveColor})${style} [${viewBox}]`);
     } catch (err) {
       console.error(`✗ ${file}:`, err.message);
     }

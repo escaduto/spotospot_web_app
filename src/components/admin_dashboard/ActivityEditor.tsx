@@ -5,6 +5,8 @@ import type { ItineraryItem } from "@/src/supabase/types";
 import { PlacePointResult } from "@/src/supabase/places";
 import { usePlacesSearch } from "@/src/hooks/usePlacesSearch";
 import { getPOIConfig } from "@/src/map/scripts/poi-config";
+import CloseIcon from "@mui/icons-material/Close";
+import TaskAltIcon from "@mui/icons-material/TaskAlt";
 
 interface Props {
   item?: ItineraryItem;
@@ -15,6 +17,8 @@ interface Props {
   onDelete?: () => Promise<void>;
   mapCenter?: { lng: number; lat: number };
   onSearchResultsChange?: (places: PlacePointResult[]) => void;
+  /** Called when user hovers a search-result row (placeId) or leaves (null) */
+  onHoverSearchResult?: (placeId: string | null) => void;
   mapSelectedPOI?: PlacePointResult | null;
   onMapPOIConsumed?: () => void;
 }
@@ -28,6 +32,7 @@ export default function ActivityEditor({
   onDelete,
   mapCenter,
   onSearchResultsChange,
+  onHoverSearchResult,
   mapSelectedPOI,
   onMapPOIConsumed,
 }: Props) {
@@ -121,9 +126,9 @@ export default function ActivityEditor({
         </h4>
         <button
           onClick={onCancel}
-          className="text-gray-400 hover:text-gray-600"
+          className="text-gray-400 hover:text-gray-600 flex items-center"
         >
-          ✕
+          <CloseIcon style={{ fontSize: 16 }} />
         </button>
       </div>
 
@@ -143,7 +148,11 @@ export default function ActivityEditor({
       <div>
         <label className="text-xs font-medium text-gray-600">
           Link to POI{" "}
-          {form.place_id && <span className="text-green-600">✓ Matched</span>}
+          {form.place_id && (
+            <span className="text-green-600 inline-flex items-center gap-0.5">
+              <TaskAltIcon style={{ fontSize: 11 }} /> Matched
+            </span>
+          )}
         </label>
         <div className="relative">
           <input
@@ -160,12 +169,14 @@ export default function ActivityEditor({
 
           {showPOISearch && isOpen && results.length > 0 && (
             <div className="absolute top-full mt-1 left-0 right-0 bg-white rounded-lg border shadow-xl max-h-60 overflow-y-auto z-50">
-              {results.slice(0, 10).map((place) => {
+              {results.map((place) => {
                 const config = getPOIConfig(place.category);
                 return (
                   <button
                     key={place.id}
                     onClick={() => handleSelectPOI(place)}
+                    onMouseEnter={() => onHoverSearchResult?.(place.id)}
+                    onMouseLeave={() => onHoverSearchResult?.(null)}
                     className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left border-b last:border-0"
                   >
                     <span

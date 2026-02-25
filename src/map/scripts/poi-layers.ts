@@ -129,6 +129,120 @@ export async function loadPOIIcons(map: maplibregl.Map): Promise<void> {
 }
 
 // -------------------------------------------------
+// Base zoom/importance filter (exported for dynamic filter building)
+// -------------------------------------------------
+
+export function buildPOIBaseFilter(): maplibregl.FilterSpecification {
+  return [
+    "any",
+    // LANDUSE + BUILDINGS (cascading by importance)
+    [
+      "all",
+      [
+        "in",
+        ["get", "source_table"],
+        ["literal", ["landuse_features", "building_features"]],
+      ],
+      [
+        "any",
+        ["all", [">=", ["get", "importance_score"], 0.8], [">=", ["zoom"], 10]],
+        ["all", [">=", ["get", "importance_score"], 0.7], [">=", ["zoom"], 11]],
+        ["all", [">=", ["get", "importance_score"], 0.6], [">=", ["zoom"], 13]],
+        ["all", [">=", ["get", "importance_score"], 0.5], [">=", ["zoom"], 14]],
+        ["all", [">=", ["zoom"], 14]],
+      ],
+    ],
+    // PLACES (cascaded by importance)
+    [
+      "all",
+      ["==", ["get", "source_table"], "places"],
+      [
+        "any",
+        [
+          "all",
+          [">=", ["get", "importance_score"], 0.88],
+          [">=", ["zoom"], 12],
+        ],
+        [
+          "all",
+          [">=", ["get", "importance_score"], 0.84],
+          [">=", ["zoom"], 13],
+        ],
+        ["all", [">=", ["get", "importance_score"], 0.8], [">=", ["zoom"], 14]],
+        [
+          "all",
+          [">=", ["get", "importance_score"], 0.75],
+          [">=", ["zoom"], 15],
+        ],
+        ["all", [">=", ["get", "importance_score"], 0.7], [">=", ["zoom"], 16]],
+        [
+          "all",
+          [">=", ["get", "importance_score"], 0.65],
+          [">=", ["zoom"], 17],
+        ],
+        ["all", [">=", ["get", "importance_score"], 0.5], [">=", ["zoom"], 18]],
+      ],
+    ],
+  ] as unknown as maplibregl.FilterSpecification;
+}
+
+/**
+ * Apply a category-group filter to the POI icon layer.
+ * Pass `null` to reset to "show all".
+ */
+export function setPOICategoryFilter(
+  map: maplibregl.Map,
+  categoryGroups: string[] | null,
+  categories: string[] | null,
+): void {
+  if (!map.getLayer(POI_ICON_LAYER_ID)) return;
+  const base = buildPOIBaseFilter();
+  if (!categoryGroups?.length && !categories?.length) {
+    map.setFilter(POI_ICON_LAYER_ID, base);
+    map.setFilter(POI_CIRCLES_LAYER_ID, null); // circles have minzoom, no base filter
+    return;
+  }
+  const clauses: maplibregl.FilterSpecification[] = [
+    base as maplibregl.FilterSpecification,
+  ];
+  if (categoryGroups?.length) {
+    clauses.push([
+      "in",
+      ["get", "category_group"],
+      ["literal", categoryGroups],
+    ] as unknown as maplibregl.FilterSpecification);
+  }
+  if (categories?.length) {
+    clauses.push([
+      "in",
+      ["get", "category"],
+      ["literal", categories],
+    ] as unknown as maplibregl.FilterSpecification);
+  }
+  const combined = [
+    "all",
+    ...clauses,
+  ] as unknown as maplibregl.FilterSpecification;
+  map.setFilter(POI_ICON_LAYER_ID, combined);
+  map.setFilter(POI_CIRCLES_LAYER_ID, combined);
+}
+
+/** Show or hide the default POI vector tile layers (e.g. when showing search results). */
+export function setPOILayerVisibility(
+  map: maplibregl.Map,
+  visible: boolean,
+): void {
+  const v = visible ? "visible" : "none";
+  for (const id of [
+    POI_ICON_LAYER_ID,
+    POI_CIRCLES_LAYER_ID,
+    POI_LABEL_LAYER_ID,
+  ]) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", v);
+  }
+}
+
+// -------------------------------------------------
 // Sources & layers
 // -------------------------------------------------
 
@@ -203,62 +317,9 @@ export function addPOILayers(map: maplibregl.Map): void {
   // When an icon is collision-hidden at low zoom these dots remain visible
   // and act as a "POIs exist here" hint; clicking zooms in to reveal icons.
   // Uses the same source filter as the icon layer below.
-  // poiFilter is defined here for reference; apply to either layer as needed.
   // Landuse/buildings: free at any zoom (tippecanoe controls floor).
   // Places POIs: gated to z13+ client-side.
-  const poiFilter: maplibregl.FilterSpecification = [
-    "any",
-
-    // LANDUSE + BUILDINGS (cascading by importance)
-    [
-      "all",
-      [
-        "in",
-        ["get", "source_table"],
-        ["literal", ["landuse_features", "building_features"]],
-      ],
-      [
-        "any",
-        ["all", [">=", ["get", "importance_score"], 0.8], [">=", ["zoom"], 10]],
-        ["all", [">=", ["get", "importance_score"], 0.7], [">=", ["zoom"], 11]],
-        ["all", [">=", ["get", "importance_score"], 0.6], [">=", ["zoom"], 13]],
-        ["all", [">=", ["get", "importance_score"], 0.5], [">=", ["zoom"], 14]],
-        ["all", [">=", ["zoom"], 14]],
-      ],
-    ],
-
-    // PLACES (also cascaded)
-    [
-      "all",
-      ["==", ["get", "source_table"], "places"],
-      [
-        "any",
-        [
-          "all",
-          [">=", ["get", "importance_score"], 0.88],
-          [">=", ["zoom"], 12],
-        ],
-        [
-          "all",
-          [">=", ["get", "importance_score"], 0.84],
-          [">=", ["zoom"], 13],
-        ],
-        ["all", [">=", ["get", "importance_score"], 0.8], [">=", ["zoom"], 14]],
-        [
-          "all",
-          [">=", ["get", "importance_score"], 0.75],
-          [">=", ["zoom"], 15],
-        ],
-        ["all", [">=", ["get", "importance_score"], 0.7], [">=", ["zoom"], 16]],
-        [
-          "all",
-          [">=", ["get", "importance_score"], 0.65],
-          [">=", ["zoom"], 17],
-        ],
-        ["all", [">=", ["get", "importance_score"], 0.5], [">=", ["zoom"], 18]],
-      ],
-    ],
-  ];
+  const poiFilter = buildPOIBaseFilter();
 
   map.addLayer({
     id: POI_CIRCLES_LAYER_ID,
