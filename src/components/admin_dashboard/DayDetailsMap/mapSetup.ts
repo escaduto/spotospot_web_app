@@ -5,6 +5,7 @@ import {
   searchPOIsCircle,
   searchPOIsIcons,
   searchPOIsLabels,
+  routeLineCasing,
   routeLine,
   routeBadge,
 } from "./mapStyles";
@@ -31,6 +32,7 @@ function setUpMapLayers(map: maplibregl.Map) {
     type: "geojson",
     data: { type: "FeatureCollection", features: [] },
   });
+  map.addLayer(routeLineCasing); // casing behind the coloured line
   map.addLayer(routeLine);
 
   // ── Route midpoints source (icon + label badges) ──

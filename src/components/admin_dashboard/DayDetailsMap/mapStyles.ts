@@ -174,6 +174,31 @@ export const searchPOIsLabels: maplibregl.LayerSpecification = {
 
 // ─── Routes ──────────────────────────────────────────────
 
+/** White casing rendered behind the coloured route line — visible only when selected or hovered */
+export const routeLineCasing: maplibregl.LayerSpecification = {
+  id: "routes-line-casing",
+  type: "line",
+  source: "routes",
+  layout: {
+    "line-cap": "round",
+    "line-join": "round",
+  },
+  paint: {
+    "line-color": "#ffffff",
+    "line-width": [
+      "case",
+      ["boolean", ["feature-state", "hover"], false],
+      13,
+      ["boolean", ["feature-state", "multiSelected"], false],
+      13,
+      ["boolean", ["get", "selected"], false],
+      13,
+      0,
+    ],
+    "line-opacity": 0.9,
+  },
+};
+
 export const routeLine: maplibregl.LayerSpecification = {
   id: "routes-line",
   type: "line",
@@ -184,8 +209,26 @@ export const routeLine: maplibregl.LayerSpecification = {
   },
   paint: {
     "line-color": ["get", "color"],
-    "line-width": 5,
-    "line-opacity": 0.7,
+    "line-width": [
+      "case",
+      ["boolean", ["feature-state", "hover"], false],
+      8,
+      ["boolean", ["get", "selected"], false],
+      8,
+      5,
+    ],
+    "line-opacity": [
+      "case",
+      ["boolean", ["feature-state", "hover"], false],
+      1.0,
+      ["boolean", ["feature-state", "multiSelected"], false],
+      1.0,
+      ["boolean", ["get", "selected"], false],
+      1.0,
+      ["boolean", ["get", "dimmed"], false],
+      0.3,
+      0.7,
+    ],
     "line-dasharray": [
       "case",
       ["boolean", ["get", "dashed"], false],
@@ -216,7 +259,31 @@ export const routeBadge: maplibregl.LayerSpecification = {
   },
   paint: {
     "icon-color": ["get", "color"],
+    "icon-opacity": [
+      "case",
+      ["boolean", ["feature-state", "hover"], false],
+      1.0,
+      ["boolean", ["feature-state", "multiSelected"], false],
+      1.0,
+      ["boolean", ["get", "selected"], false],
+      1.0,
+      ["boolean", ["get", "dimmed"], false],
+      0.25,
+      1.0,
+    ],
     "text-color": ["get", "color"],
+    "text-opacity": [
+      "case",
+      ["boolean", ["feature-state", "hover"], false],
+      1.0,
+      ["boolean", ["feature-state", "multiSelected"], false],
+      1.0,
+      ["boolean", ["get", "selected"], false],
+      1.0,
+      ["boolean", ["get", "dimmed"], false],
+      0.25,
+      1.0,
+    ],
     "text-halo-color": "#ffffff",
     "text-halo-width": 2,
   },
