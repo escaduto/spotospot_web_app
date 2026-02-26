@@ -181,7 +181,7 @@ function usePlaceDetails(placeId: string | null): PlaceInfo | null {
       )
       .eq("id", placeId)
       .single()
-      .then(({ data }) => {
+      .then(({ data }: { data: PlaceInfo | null }) => {
         if (data)
           setPlaceMap((prev) => ({ ...prev, [placeId]: data as PlaceInfo }));
       });
@@ -401,7 +401,9 @@ function ActivityBlock({
   const endLabel = item.end_time ? fmt12(item.end_time) : null;
 
   // Only fetch place details when selected and linked
-  const placeDetails = usePlaceDetails(isSelected && item.place_table === "places" ? item.place_source_id : null);
+  const placeDetails = usePlaceDetails(
+    isSelected && item.place_table === "places" ? item.place_source_id : null,
+  );
 
   return (
     <div

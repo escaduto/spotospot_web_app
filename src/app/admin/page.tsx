@@ -5,8 +5,8 @@ import FilterBar from "@/src/components/admin_dashboard/FilterBar";
 import ListView from "@/src/components/admin_dashboard/ListView";
 import MapView from "@/src/components/admin_dashboard/MapView";
 import { useAdminData } from "@/src/hooks/useAdminData";
+import { useAuth } from "@/src/hooks/useAuth";
 import type { ItineraryDay } from "@/src/supabase/types";
-import { createClient } from "@/src/supabase/client";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -19,9 +19,7 @@ export type Filters = {
 
 export default function AdminPage() {
   const router = useRouter();
-  const supabase = createClient();
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const { user, loading } = useAuth();
   const [view, setView] = useState<"list" | "map">("list");
   const [filters, setFilters] = useState<Filters>({
     status: "private",
@@ -31,28 +29,20 @@ export default function AdminPage() {
   });
   const { days, items, stats, locations } = useAdminData(filters);
 
+  // Redirect once auth is resolved
   useEffect(() => {
-    (async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        router.replace("/");
-        return;
-      }
-      const role = user.user_metadata?.role ?? user.app_metadata?.role;
-      if (role !== "admin") {
-        router.replace("/");
-        return;
-      }
-      setIsAdmin(true);
-      setLoading(false);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (loading) return;
+    if (!user) {
+      router.replace("/");
+      return;
+    }
+    const role = user.user_metadata?.role ?? user.app_metadata?.role;
+    if (role !== "admin") {
+      router.replace("/");
+    }
+  }, [loading, user, router]);
 
   const handleSelectDay = (day: ItineraryDay) => {
-    // Navigate to dedicated day details page
     router.push(`/admin/day/${day.id}`);
   };
 
@@ -64,7 +54,8 @@ export default function AdminPage() {
     );
   }
 
-  if (!isAdmin) return null;
+  const role = user?.user_metadata?.role ?? user?.app_metadata?.role;
+  if (!user || role !== "admin") return null;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">

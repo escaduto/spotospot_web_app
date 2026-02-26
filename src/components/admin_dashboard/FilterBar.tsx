@@ -81,7 +81,7 @@ export default function FilterBar({ filters, onChange, locations }: Props) {
 
       <button
         onClick={() =>
-          onChange({ status: "pending", city: "", country: "", search: "" })
+          onChange({ status: "private", city: "", country: "", search: "" })
         }
         className="px-3 py-2 text-sm text-gray-500 hover:text-gray-800 underline"
       >

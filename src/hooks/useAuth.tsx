@@ -68,51 +68,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    const init = async () => {
-      try {
-        // Race the auth check with a 3 second timeout
-        const authPromise = supabase.auth.getSession();
-        const timeoutPromise = new Promise<null>((resolve) =>
-          setTimeout(() => resolve(null), 3000)
-        );
-
-        const result = await Promise.race([authPromise, timeoutPromise]);
-
-        if (!mounted) return;
-
-        if (result === null) {
-          // Timeout occurred - continue without auth
-          console.warn("Auth session check timed out, continuing without auth");
-          setLoading(false);
-          return;
-        }
-
-        const { data: { session: currentSession } } = result;
-        setSession(currentSession);
-        setUser(currentSession?.user ?? null);
-
-        if (currentSession?.user && mounted) {
-          // Fetch profile with timeout
-          const profilePromise = fetchProfile(currentSession.user.id);
-          const profileTimeout = new Promise<void>((resolve) =>
-            setTimeout(() => resolve(), 2000)
-          );
-          await Promise.race([profilePromise, profileTimeout]);
-        }
-      } catch (error) {
-        console.error("Error checking auth session:", error);
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    init();
-
+    // onAuthStateChange fires INITIAL_SESSION synchronously from the local
+    // token cache (no network round-trip needed), then again on refresh.
+    // This replaces the separate getSession() + timeout approach.
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+    } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      if (!mounted) return;
+
       setSession(newSession);
       setUser(newSession?.user ?? null);
 
@@ -121,11 +84,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setProfile(null);
       }
+
+      // Only clear loading after the first event (INITIAL_SESSION or SIGNED_IN)
+      if (
+        event === "INITIAL_SESSION" ||
+        event === "SIGNED_IN" ||
+        event === "SIGNED_OUT"
+      ) {
+        if (mounted) setLoading(false);
+      }
     });
+
+    // Safety net: if INITIAL_SESSION never fires (e.g. no stored token),
+    // unblock loading after 1.5 s max.
+    const safetyTimer = setTimeout(() => {
+      if (mounted) setLoading(false);
+    }, 1500);
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
+      clearTimeout(safetyTimer);
     };
   }, [supabase, fetchProfile]);
 
