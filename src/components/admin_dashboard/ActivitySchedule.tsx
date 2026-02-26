@@ -401,7 +401,7 @@ function ActivityBlock({
   const endLabel = item.end_time ? fmt12(item.end_time) : null;
 
   // Only fetch place details when selected and linked
-  const placeDetails = usePlaceDetails(isSelected ? item.place_id : null);
+  const placeDetails = usePlaceDetails(isSelected && item.place_table === "places" ? item.place_source_id : null);
 
   return (
     <div
@@ -504,7 +504,7 @@ function ActivityBlock({
                   </span>
                 )}
               </div>
-              {item.place_id && (
+              {item.place_source_id && (
                 <span className="text-[10px]  text-green-700 px-1.5 py-0.5 rounded-sm font-medium inline-flex items-center gap-0.5 justify-end">
                   <TaskAltIcon style={{ fontSize: 10 }} />
                 </span>
@@ -539,7 +539,7 @@ function ActivityBlock({
               </div>
 
               {/* Place details (if POI linked) */}
-              {item.place_id && (
+              {item.place_source_id && (
                 <div
                   className="rounded-lg p-2.5 border space-y-1"
                   style={{
@@ -597,7 +597,7 @@ function ActivityBlock({
               )}
 
               {/* Location name (no POI) */}
-              {!item.place_id && item.location_name && (
+              {!item.place_source_id && item.location_name && (
                 <p className="text-[11px] text-gray-500 flex items-center gap-0.5">
                   <LocationOnIcon style={{ fontSize: 11 }} />{" "}
                   {item.location_name}

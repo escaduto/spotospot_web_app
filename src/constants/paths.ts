@@ -6,7 +6,7 @@ export const glyphsURL = "/fonts/{fontstack}/{range}.pbf";
 export const GLOBAL_PMTILES_URL =
   "https://terrasketch-tiles.terrasketchmaps.workers.dev/protomaps_20241104_wholeworld/{z}/{x}/{y}.mvt?v=2";
 export const PLACES_PMTILES_URL =
-  "https://terrasketch-tiles.terrasketchmaps.workers.dev/places/{z}/{x}/{y}.mvt?v=9";
+  "https://terrasketch-tiles.terrasketchmaps.workers.dev/places/{z}/{x}/{y}.mvt?v=10";
 
 export const mapSource: SourceSpecification = {
   type: "vector",

@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import maplibregl, { GeoJSONSource } from "maplibre-gl";
-import { fetchPOIsInBounds, placesToGeoJSON } from "@/src/supabase/places";
+import { searchPlacesByFilter, placesToGeoJSON } from "@/src/supabase/places";
 import { setPOILayerVisibility } from "@/src/map/scripts/poi-layers";
 
 // -------------------------------------------------
@@ -27,7 +28,7 @@ const FILTER_GROUPS: FilterGroup[] = [
   {
     key: "eat",
     categoryGroup: "food_and_drink",
-    label: "Restaurants & Cafés",
+    label: "Food & Drink",
     emoji: "🍽️",
     color: "#E74C3C",
     subcategories: [
@@ -69,26 +70,6 @@ const FILTER_GROUPS: FilterGroup[] = [
     ],
   },
   {
-    key: "shopping",
-    categoryGroup: "shopping",
-    label: "Shopping",
-    emoji: "🛍️",
-    color: "#E91E63",
-    subcategories: [
-      { key: "shopping_mall", label: "Shopping Mall" },
-      { key: "market", label: "Market" },
-      { key: "farmers_market", label: "Farmers Market" },
-      { key: "night_market", label: "Night Market" },
-      { key: "clothing_store", label: "Clothing" },
-      { key: "grocery_store", label: "Grocery" },
-      { key: "supermarket", label: "Supermarket" },
-      { key: "souvenir_shop", label: "Souvenirs" },
-      { key: "gift_shop", label: "Gift Shop" },
-      { key: "bookstore", label: "Bookstore" },
-      { key: "antique_shop", label: "Antiques" },
-    ],
-  },
-  {
     key: "sightseeing",
     categoryGroup: ["tourism_and_attractions", "arts_and_culture"],
     label: "Sightseeing",
@@ -108,7 +89,75 @@ const FILTER_GROUPS: FilterGroup[] = [
       { key: "museum", label: "Museum" },
       { key: "art_gallery", label: "Art Gallery" },
       { key: "theater", label: "Theater" },
-      { key: "cinema", label: "Cinema" },
+    ],
+  },
+  {
+    key: "shopping",
+    categoryGroup: "shopping",
+    label: "Shopping",
+    emoji: "🛍️",
+    color: "#E91E63",
+    subcategories: [
+      { key: "shopping_mall", label: "Shopping Mall" },
+      { key: "market", label: "Market" },
+      { key: "farmers_market", label: "Farmers Market" },
+      { key: "night_market", label: "Night Market" },
+      { key: "clothing_store", label: "Clothing" },
+      { key: "grocery_store", label: "Grocery" },
+      { key: "supermarket", label: "Supermarket" },
+      { key: "souvenir_shop", label: "Souvenirs" },
+      { key: "bookstore", label: "Bookstore" },
+      { key: "antique_shop", label: "Antiques" },
+    ],
+  },
+  {
+    key: "accommodation",
+    categoryGroup: "accommodation",
+    label: "Stay",
+    emoji: "🏨",
+    color: "#3498DB",
+    subcategories: [
+      { key: "hotel", label: "Hotel" },
+      { key: "hostel", label: "Hostel" },
+      { key: "motel", label: "Motel" },
+      { key: "resort", label: "Resort" },
+      { key: "bed_and_breakfast", label: "B&B" },
+      { key: "campground", label: "Campground" },
+      { key: "guest_house", label: "Guest House" },
+    ],
+  },
+  {
+    key: "nightlife",
+    categoryGroup: "nightlife_and_entertainment",
+    label: "Nightlife",
+    emoji: "🎶",
+    color: "#FF6F00",
+    subcategories: [
+      { key: "nightclub", label: "Nightclub" },
+      { key: "lounge", label: "Lounge" },
+      { key: "karaoke", label: "Karaoke" },
+      { key: "casino", label: "Casino" },
+      { key: "comedy_club", label: "Comedy Club" },
+      { key: "jazz_club", label: "Jazz Club" },
+      { key: "rooftop_bar", label: "Rooftop Bar" },
+    ],
+  },
+  {
+    key: "sports",
+    categoryGroup: "sports_and_activities",
+    label: "Sports",
+    emoji: "⚽",
+    color: "#00BCD4",
+    subcategories: [
+      { key: "gym", label: "Gym" },
+      { key: "swimming_pool", label: "Pool" },
+      { key: "tennis_court", label: "Tennis" },
+      { key: "golf_course", label: "Golf" },
+      { key: "ski_resort", label: "Ski Resort" },
+      { key: "stadium", label: "Stadium" },
+      { key: "sports_complex", label: "Sports Complex" },
+      { key: "surf_spot", label: "Surf Spot" },
+      { key: "yoga_studio", label: "Yoga" },
     ],
   },
 ];
@@ -143,8 +192,14 @@ export default function MapPOIFilter({
     new Map(),
   );
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [dropdownPos, setDropdownPos] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
   const [fetching, setFetching] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const dropdownMenuRef = useRef<HTMLDivElement>(null);
+  const pillRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   // Track whether a filter is currently applied so we can refetch on map move
   const activeFilterRef = useRef<{
     groups: Set<string>;
@@ -156,7 +211,8 @@ export default function MapPOIFilter({
     const handle = (e: MouseEvent) => {
       if (
         dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node)
+        !dropdownRef.current.contains(e.target as Node) &&
+        !dropdownMenuRef.current?.contains(e.target as Node)
       ) {
         setOpenDropdown(null);
       }
@@ -164,27 +220,6 @@ export default function MapPOIFilter({
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
   }, []);
-
-  // Client-side filter: does a place belong to any of the active groups/subcats?
-  const placeMatchesFilter = (
-    place: { category_group: string | null; category: string | null },
-    groups: Set<string>,
-    subcats: Map<string, Set<string>>,
-  ): boolean => {
-    for (const gKey of groups) {
-      const group = FILTER_GROUPS.find((g) => g.key === gKey);
-      if (!group) continue;
-      const groupCats = Array.isArray(group.categoryGroup)
-        ? group.categoryGroup
-        : [group.categoryGroup];
-      if (!groupCats.includes(place.category_group ?? "")) continue;
-      // Group matches — check subcats
-      const subs = subcats.get(gKey);
-      if (!subs || subs.size === 0) return true; // no subcat filter → accept all in group
-      if (place.category && subs.has(place.category)) return true;
-    }
-    return false;
-  };
 
   // Fetch from Supabase and push into the "search-pois" GeoJSON source
   const applyFilter = useCallback(
@@ -205,33 +240,34 @@ export default function MapPOIFilter({
       setFetching(true);
 
       try {
-        const mapBounds = map.getBounds();
-        const bounds = {
-          minLng: mapBounds.getWest(),
-          maxLng: mapBounds.getEast(),
-          minLat: mapBounds.getSouth(),
-          maxLat: mapBounds.getNorth(),
-        };
         const center = map.getCenter();
 
-        // Fetch all POIs + landuse in the current viewport, sorted by proximity
-        const allInBounds = await fetchPOIsInBounds(
-          bounds,
-          { lng: center.lng, lat: center.lat },
+        // Build group/category arrays for the RPC
+        const allGroups: string[] = [];
+        const allCategories: string[] = [];
+        for (const gKey of newGroups) {
+          const group = FILTER_GROUPS.find((g) => g.key === gKey);
+          if (!group) continue;
+          const subs = newSubcats.get(gKey);
+          if (subs && subs.size > 0) {
+            allCategories.push(...Array.from(subs));
+          } else {
+            const groupCats = Array.isArray(group.categoryGroup)
+              ? group.categoryGroup
+              : [group.categoryGroup];
+            allGroups.push(...groupCats);
+          }
+        }
+
+        const matched = await searchPlacesByFilter(
+          allGroups,
+          allCategories,
+          { lat: center.lat, lng: center.lng },
           500,
         );
 
-        // Guard: filter may have changed while we were fetching
+        // Guard: filter may have changed while fetching
         if (activeFilterRef.current?.groups !== newGroups) return;
-
-        // Client-side category/group filter
-        const matched = allInBounds.filter((p) =>
-          placeMatchesFilter(
-            { category_group: p.category_group, category: p.category },
-            newGroups,
-            newSubcats,
-          ),
-        );
 
         const geojson = placesToGeoJSON(matched);
         source?.setData(geojson);
@@ -321,71 +357,124 @@ export default function MapPOIFilter({
     setOpenDropdown(null);
   };
 
+  const openDropdownPanel = (gKey: string) => {
+    if (openDropdown === gKey) {
+      setOpenDropdown(null);
+      return;
+    }
+    const el = pillRefs.current.get(gKey);
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setDropdownPos({ top: rect.bottom + 4, left: rect.left });
+    }
+    setOpenDropdown(gKey);
+  };
+
   return (
-    <div
-      className="relative flex items-center gap-1.5 flex-wrap"
-      ref={dropdownRef}
-    >
+    <div ref={dropdownRef} className="relative">
+      {/* Scrollable pill strip — overflow-x clips only this strip, not the portaled dropdowns */}
+      <div
+        className="flex items-center w-120 mt-2 gap-1.5 overflow-x-auto px-3 py-2 backdrop-blur-sm rounded-2xl shadow-md border border-white/60 [&::-webkit-scrollbar]:hidden"
+        style={{ scrollbarWidth: "none" }}
+      >
+        {FILTER_GROUPS.map((group) => {
+          const isActive = activeGroups.has(group.key);
+          const subcats = activeSubcats.get(group.key);
+          const subcatCount = subcats?.size ?? 0;
+          const isOpen = openDropdown === group.key;
+
+          return (
+            <div
+              key={group.key}
+              className="relative shrink-0"
+              ref={(el) => {
+                if (el) pillRefs.current.set(group.key, el);
+                else pillRefs.current.delete(group.key);
+              }}
+            >
+              {/* Pill */}
+              <div
+                className={`flex items-center rounded-full text-xs font-semibold shadow-sm border transition-all overflow-hidden ${
+                  isActive
+                    ? "text-white border-transparent shadow-md"
+                    : "bg-white/90 text-gray-700 border-gray-200"
+                }`}
+                style={
+                  isActive
+                    ? { backgroundColor: group.color, borderColor: group.color }
+                    : {}
+                }
+              >
+                {/* Label — toggles whole group */}
+                <button
+                  className={`flex items-center gap-1 pl-3 pr-2 py-1.5 transition-colors ${
+                    isActive ? "hover:bg-black/10" : "hover:bg-gray-100"
+                  }`}
+                  onClick={() => toggleGroup(group.key)}
+                >
+                  <span>{group.label}</span>
+                  {subcatCount > 0 && (
+                    <span className="bg-white/30 rounded-full px-1.5 text-[10px]">
+                      {subcatCount}
+                    </span>
+                  )}
+                </button>
+                {/* Chevron — opens subcategory dropdown via portal */}
+                <button
+                  className={`flex items-center pr-2 py-1.5 pl-0.5 border-l transition-colors ${
+                    isActive
+                      ? "border-white/20 hover:bg-black/10"
+                      : "border-gray-200 hover:bg-gray-100"
+                  } ${isOpen ? "opacity-100" : "opacity-60"}`}
+                  onClick={() => openDropdownPanel(group.key)}
+                >
+                  <span
+                    className="transition-transform duration-150"
+                    style={{
+                      display: "inline-block",
+                      transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
+                    }}
+                  >
+                    ▾
+                  </span>
+                </button>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Clear all */}
+        {activeGroups.size > 0 && (
+          <button
+            onClick={clearAll}
+            className="shrink-0 px-2.5 py-1.5 rounded-full text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100 border border-gray-200 bg-white/90 transition-colors"
+          >
+            ✕ Clear
+          </button>
+        )}
+
+        {/* Loading indicator */}
+        {fetching && (
+          <span className="shrink-0 w-4 h-4 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin" />
+        )}
+      </div>
+
+      {/* Dropdowns rendered as portals so they escape overflow-x-auto clipping */}
       {FILTER_GROUPS.map((group) => {
+        if (openDropdown !== group.key || !dropdownPos) return null;
         const isActive = activeGroups.has(group.key);
         const subcats = activeSubcats.get(group.key);
         const subcatCount = subcats?.size ?? 0;
-        const isOpen = openDropdown === group.key;
 
-        return (
-          <div key={group.key} className="relative">
-            {/* Pill — label area toggles group; chevron opens subcat dropdown */}
-            <div
-              className={`flex items-center rounded-full text-xs font-semibold shadow-sm border transition-all overflow-hidden ${
-                isActive
-                  ? "text-white border-transparent shadow-md"
-                  : "bg-white/90 text-gray-700 border-gray-200"
-              }`}
-              style={
-                isActive
-                  ? { backgroundColor: group.color, borderColor: group.color }
-                  : {}
-              }
-            >
-              {/* Label — toggles whole group */}
-              <button
-                className={`flex items-center gap-1 pl-3 pr-2 py-1.5 transition-colors ${
-                  isActive ? "hover:bg-black/10" : "hover:bg-gray-100"
-                }`}
-                onClick={() => toggleGroup(group.key)}
+        return typeof document !== "undefined"
+          ? createPortal(
+              <div
+                key={group.key}
+                ref={dropdownMenuRef}
+                className="fixed z-9999 bg-white rounded-xl shadow-xl border border-gray-100 p-2 w-44"
+                style={{ top: dropdownPos.top, left: dropdownPos.left }}
               >
-                <span>{group.label}</span>
-                {subcatCount > 0 && (
-                  <span className="bg-white/30 rounded-full px-1.5 text-[10px]">
-                    {subcatCount}
-                  </span>
-                )}
-              </button>
-              {/* Chevron — opens subcategory dropdown */}
-              <button
-                className={`flex items-center pr-2 py-1.5 pl-0.5 border-l transition-colors ${
-                  isActive
-                    ? "border-white/20 hover:bg-black/10"
-                    : "border-gray-200 hover:bg-gray-100"
-                } ${isOpen ? "opacity-100" : "opacity-60"}`}
-                onClick={() => setOpenDropdown(isOpen ? null : group.key)}
-              >
-                <span
-                  className="transition-transform duration-150"
-                  style={{
-                    display: "inline-block",
-                    transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
-                  }}
-                >
-                  ▾
-                </span>
-              </button>
-            </div>
-
-            {/* Dropdown */}
-            {isOpen && (
-              <div className="absolute top-full mt-1 left-0 z-50 bg-white rounded-xl shadow-xl border border-gray-100 p-2 min-w-45">
-                {/* Toggle whole group row */}
+                {/* Toggle whole group */}
                 <button
                   className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold mb-1 transition-colors ${
                     isActive && subcatCount === 0
@@ -399,7 +488,6 @@ export default function MapPOIFilter({
                   }
                   onClick={() => toggleGroup(group.key)}
                 >
-                  {/* <span>{group.emoji}</span> */}
                   <span>All {group.label}</span>
                   {isActive && subcatCount === 0 && (
                     <span className="ml-auto">✓</span>
@@ -447,26 +535,11 @@ export default function MapPOIFilter({
                     );
                   })}
                 </div>
-              </div>
-            )}
-          </div>
-        );
+              </div>,
+              document.body,
+            )
+          : null;
       })}
-
-      {/* Clear all */}
-      {activeGroups.size > 0 && (
-        <button
-          onClick={clearAll}
-          className="px-2.5 py-1.5 rounded-full text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100 border border-gray-200 bg-white/90 transition-colors"
-        >
-          ✕ Clear
-        </button>
-      )}
-
-      {/* Loading indicator */}
-      {fetching && (
-        <span className="w-4 h-4 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin" />
-      )}
     </div>
   );
 }

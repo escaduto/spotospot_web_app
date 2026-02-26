@@ -54,7 +54,7 @@ export function useAdminData(filters: Filters) {
     const withImage = allDays.filter((d) => !!d.image_url);
     const cities = new Set(allDays.map((d) => d.city).filter(Boolean));
     const countries = new Set(allDays.map((d) => d.country).filter(Boolean));
-    const matchedLocations = allItems.filter((i) => !!i.place_id).length;
+    const matchedLocations = allItems.filter((i) => !!i.place_source_id).length;
 
     return {
       total: allDays.length,

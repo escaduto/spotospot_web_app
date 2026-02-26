@@ -89,23 +89,38 @@ export const searchPOIsCircle: maplibregl.LayerSpecification = {
   },
   paint: {
     "circle-radius": [
-      "case",
-      ["boolean", ["feature-state", "hover"], false],
-      20,
-      3,
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      10,
+      [
+        "case",
+        ["boolean", ["feature-state", "hover"], false],
+        8, // hovered radius at zoom 12
+        3, // default radius at zoom 12
+      ],
+      12,
+      [
+        "case",
+        ["boolean", ["feature-state", "hover"], false],
+        10, // hovered radius at zoom 12
+        4, // default radius at zoom 12
+      ],
+      15,
+      [
+        "case",
+        ["boolean", ["feature-state", "hover"], false],
+        16, // hovered radius at zoom 15
+        8, // default radius at zoom 15
+      ],
     ],
     "circle-color": ["get", "color"],
-    "circle-stroke-color": [
-      "case",
-      ["boolean", ["feature-state", "hover"], false],
-      ["get", "background"],
-      "#ffffff",
-    ],
+    "circle-stroke-color": "#ffffff",
     "circle-stroke-width": [
       "case",
       ["boolean", ["feature-state", "hover"], false],
-      3,
       2,
+      1,
     ],
     "circle-opacity": [
       "case",
@@ -120,11 +135,13 @@ export const searchPOIsIcons: maplibregl.LayerSpecification = {
   id: "search-pois-icons",
   type: "symbol",
   source: "search-pois",
+  minzoom: 12,
   layout: {
     "icon-image": ["get", "icon"],
-    "icon-size": 0.5,
+    "icon-size": ["interpolate", ["linear"], ["zoom"], 12, 0.3, 15, 0.5],
+    "icon-anchor": "center",
     "icon-allow-overlap": true,
-    "icon-ignore-placement": true,
+    "icon-ignore-placement": false,
     "symbol-sort-key": ["get", "sortKey"],
   },
   paint: { "icon-color": "#ffffff" },
@@ -134,10 +151,11 @@ export const searchPOIsLabels: maplibregl.LayerSpecification = {
   id: "search-pois-label",
   type: "symbol",
   source: "search-pois",
+  minzoom: 11,
   layout: {
     "text-field": ["get", "name"],
     "text-size": 10,
-    "text-offset": [0, 1.5],
+    "text-offset": [0, 1],
     "text-anchor": "top",
     "text-allow-overlap": false,
     "symbol-sort-key": ["get", "sortKey"],
@@ -147,10 +165,10 @@ export const searchPOIsLabels: maplibregl.LayerSpecification = {
       "case",
       ["boolean", ["feature-state", "hover"], false],
       "#7c3aed",
-      "#5c5c5c",
+      "#3d3d3d",
     ],
     "text-halo-color": "#ffffff",
-    "text-halo-width": 1.5,
+    "text-halo-width": 2,
   },
 };
 

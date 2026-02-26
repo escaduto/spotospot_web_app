@@ -180,8 +180,8 @@ export default function MapSearchBar({
   }, [clearRef, handleClear]);
 
   const subtitle = (r: MapSearchResult) => {
-    if (r.source_table === "landuse_features") return "Area / Landmark";
-    if (r.source_table === "building_features") return "Building";
+    if (r.place_table === "landuse_features") return "Area / Landmark";
+    if (r.place_table === "building_features") return "Building";
     return [r.address, r.city, r.country].filter(Boolean).join(", ");
   };
 
@@ -221,7 +221,7 @@ export default function MapSearchBar({
             const hasCoords = r.lat != null && r.lng != null;
             return (
               <button
-                key={`${r.source_table}-${r.id}-${i}`}
+                key={`${r.place_table}-${r.place_source_id}-${i}`}
                 onClick={() => handleSelect(r)}
                 onMouseEnter={() => handleResultHover(r, i, true)}
                 onMouseLeave={() => handleResultHover(r, i, false)}

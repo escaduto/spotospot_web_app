@@ -18,256 +18,16 @@ import { parsePoint } from "@/src/utils/geo";
 import MapPOIFilter from "./MapPOIFilter";
 import MapSearchBar from "./MapSearchBar";
 import type { MapSearchResult } from "@/src/hooks/useMapSearch";
-import { createClient } from "@/src/supabase/client";
-import { getPOIConfig } from "@/src/map/scripts/poi-config";
 import SearchIcon from "@mui/icons-material/Search";
-import CloseIcon from "@mui/icons-material/Close";
-import PlaceIcon from "@mui/icons-material/Place";
 import LocationOnIcon from "@mui/icons-material/LocationOn";
-import LanguageIcon from "@mui/icons-material/Language";
-import PhoneIcon from "@mui/icons-material/Phone";
 import OpenInFullIcon from "@mui/icons-material/OpenInFull";
-
-// -------------------------------------------------
-// Quick-add panel shown when user clicks a map POI
-// -------------------------------------------------
-
-interface QuickAddPanelProps {
-  name: string;
-  category: string | null;
-  placeId: string;
-  coordinates: [number, number];
-  nextIndex: number;
-  onAdd: (data: Partial<ItineraryItem>) => void;
-  onDismiss: () => void;
-}
-
-function QuickAddPanel({
-  name,
-  category,
-  placeId,
-  coordinates,
-  nextIndex,
-  onAdd,
-  onDismiss,
-}: QuickAddPanelProps) {
-  const cfg = getPOIConfig(category);
-  const [title, setTitle] = useState(name);
-
-  return (
-    <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 w-72 bg-white rounded-2xl shadow-2xl border border-gray-100 p-4 space-y-3">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span
-            className="w-7 h-7 rounded-full flex items-center justify-center text-white text-sm shrink-0"
-            style={{ backgroundColor: cfg.color }}
-          >
-            <PlaceIcon style={{ fontSize: 14 }} />
-          </span>
-          <div>
-            <p className="text-xs font-semibold text-gray-900 leading-tight">
-              {name}
-            </p>
-            <p className="text-[10px] text-gray-400">{cfg.label}</p>
-          </div>
-        </div>
-        <button
-          onClick={onDismiss}
-          className="text-gray-400 hover:text-gray-600 text-lg leading-none"
-        >
-          ✕
-        </button>
-      </div>
-
-      {/* Title override */}
-      <div>
-        <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">
-          Activity title
-        </label>
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm mt-0.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
-        />
-      </div>
-
-      {/* Actions */}
-      <div className="flex gap-2">
-        <button
-          onClick={() =>
-            onAdd({
-              title,
-              location_name: name,
-              location_coords: `POINT(${coordinates[0]} ${coordinates[1]})`,
-              place_id: placeId || null,
-              order_index: nextIndex,
-              item_type: "activity",
-            })
-          }
-          disabled={!title.trim()}
-          className="flex-1 bg-blue-600 text-white text-xs font-semibold px-4 py-1.5 rounded-xl disabled:opacity-40 hover:bg-blue-700 transition-colors"
-        >
-          + Add Activity
-        </button>
-        <button
-          onClick={onDismiss}
-          className="text-xs text-gray-500 px-3 py-1.5 rounded-xl hover:bg-gray-100 transition-colors"
-        >
-          Skip
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// -------------------------------------------------
-// Action card shown when user clicks a search-result POI on map
-// -------------------------------------------------
-
-interface SearchPOIActionCardProps {
-  place: PlacePointResult;
-  editingItemId: string | null;
-  nextIndex: number;
-  onAddActivity: (data: Partial<ItineraryItem>) => void;
-  onReplaceActivity: (place: PlacePointResult) => void;
-  onDismiss: () => void;
-}
-
-function SearchPOIActionCard({
-  place,
-  editingItemId,
-  nextIndex,
-  onAddActivity,
-  onReplaceActivity,
-  onDismiss,
-}: SearchPOIActionCardProps) {
-  const cfg = getPOIConfig(place.category);
-  const [title, setTitle] = useState(place.name_en || place.name_default);
-  const [extra, setExtra] = useState<{
-    website_url: string | null;
-    phone_number: string | null;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!place.id) return;
-    const sb = createClient();
-    sb.from("places")
-      .select("website_url, phone_number")
-      .eq("id", place.id)
-      .single()
-      .then(({ data }) => {
-        if (data)
-          setExtra(
-            data as { website_url: string | null; phone_number: string | null },
-          );
-      });
-  }, [place.id]);
-
-  const location = [place.address, place.city, place.country]
-    .filter(Boolean)
-    .join(", ");
-
-  return (
-    <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 p-4 space-y-3">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span
-            className="w-7 h-7 rounded-full flex items-center justify-center text-white shrink-0"
-            style={{ backgroundColor: cfg.color }}
-          >
-            <PlaceIcon style={{ fontSize: 14 }} />
-          </span>
-          <div>
-            <p className="text-xs font-semibold text-gray-900 leading-tight">
-              {place.name_en || place.name_default}
-            </p>
-            <p className="text-[10px] text-gray-400">{cfg.label}</p>
-          </div>
-        </div>
-        <button
-          onClick={onDismiss}
-          className="text-gray-400 hover:text-gray-600 shrink-0"
-        >
-          <CloseIcon style={{ fontSize: 16 }} />
-        </button>
-      </div>
-
-      {/* Location */}
-      {location && (
-        <p className="text-[11px] text-gray-500 flex items-center gap-0.5">
-          <LocationOnIcon style={{ fontSize: 12 }} /> {location}
-        </p>
-      )}
-
-      {/* Extra details */}
-      {extra?.website_url && (
-        <a
-          href={extra.website_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[11px] text-blue-600 hover:underline flex items-center gap-0.5"
-        >
-          <LanguageIcon style={{ fontSize: 11 }} /> Website
-        </a>
-      )}
-      {extra?.phone_number && (
-        <p className="text-[11px] text-gray-500 flex items-center gap-0.5">
-          <PhoneIcon style={{ fontSize: 11 }} /> {extra.phone_number}
-        </p>
-      )}
-
-      {/* Title override */}
-      <div>
-        <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">
-          Activity title
-        </label>
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm mt-0.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
-        />
-      </div>
-
-      {/* Actions */}
-      <div className="flex gap-2">
-        <button
-          onClick={() =>
-            onAddActivity({
-              title,
-              location_name: place.name_en || place.name_default,
-              location_coords: `POINT(${place.lng} ${place.lat})`,
-              place_id: place.id || null,
-              order_index: nextIndex,
-              item_type: "activity",
-            })
-          }
-          disabled={!title.trim()}
-          className="flex-1 bg-blue-600 text-white text-xs font-semibold px-4 py-1.5 rounded-xl disabled:opacity-40 hover:bg-blue-700 transition-colors"
-        >
-          + Add Activity
-        </button>
-        {editingItemId && (
-          <button
-            onClick={() => onReplaceActivity(place)}
-            className="text-xs text-blue-600 border border-blue-300 px-3 py-1.5 rounded-xl hover:bg-blue-50 transition-colors font-medium"
-          >
-            Replace
-          </button>
-        )}
-        <button
-          onClick={onDismiss}
-          className="text-xs text-gray-500 px-3 py-1.5 rounded-xl hover:bg-gray-100 transition-colors"
-        >
-          Skip
-        </button>
-      </div>
-    </div>
-  );
-}
+import SearchPOIActionCard from "../../POIActionCard/POIActionCard";
+import fetchPOIBYID from "@/src/supabase/fetchPOIByID";
+import {
+  highlightPolygonByID,
+  clearPolygonHighlight,
+} from "@/src/map/scripts/poi-layers";
+import { getPOIConfig } from "@/src/map/scripts/poi-config";
 
 // -------------------------------------------------
 // Props
@@ -314,14 +74,6 @@ export default function DayDetailsMap({
       : [-122.4107, 37.7784],
     initialZoom: 12,
   });
-
-  // Quick-add panel state
-  const [quickAdd, setQuickAdd] = useState<{
-    name: string;
-    category: string | null;
-    placeId: string;
-    coordinates: [number, number];
-  } | null>(null);
 
   // Search POI action card state (click on search-pois layer marker)
   const [clickedSearchPOI, setClickedSearchPOI] =
@@ -398,18 +150,22 @@ export default function DayDetailsMap({
   usePOIInteraction({
     mapRef,
     mapLoaded,
-    onPOIClick: useCallback(
-      (result) => {
-        if (isApproved) return;
-        setQuickAdd({
-          name: result.name,
-          category: result.category,
-          placeId: result.id,
-          coordinates: result.coordinates,
-        });
-      },
-      [isApproved],
-    ),
+    onPOIClick: (result) => {
+      if (isApproved) return;
+      fetchPOIBYID(result.id, result.source_table || "places").then((place) => {
+        setClickedSearchPOI(place);
+        // For landuse / building features, highlight their polygon footprint.
+        // source_id in tile properties is the DB _id used by getPolygonGeometry.
+        const sourceId = (result.properties.source_id as string) || result.id;
+        const color = getPOIConfig(place.category).color;
+        highlightPolygonByID(
+          mapRef.current!,
+          sourceId,
+          result.source_table || "places",
+          color,
+        );
+      });
+    },
   });
 
   // Fit map to all activities
@@ -436,8 +192,8 @@ export default function DayDetailsMap({
       // Convert MapSearchResult → PlacePointResult for the action card
       const place: PlacePointResult = {
         id: r.id,
-        source: r.source_table,
-        source_id: r.id,
+        place_source_id: r.place_source_id || r.id,
+        place_table: r.place_table || "places",
         name_default: r.name,
         name_en: r.name,
         category: r.category,
@@ -488,15 +244,13 @@ export default function DayDetailsMap({
           </div>
 
           {/* Filter pills */}
-          <div className="pointer-events-auto">
-            <div className=" backdrop-blur-sm rounded-2xl px-3 py-2 shadow-md border border-white/60 flex items-center gap-1.5 flex-wrap">
-              <MapPOIFilter
-                mapRef={mapRef}
-                mapLoaded={mapLoaded}
-                onBoundsChanged={() => setShowSearchHere(true)}
-                refetchRef={filterRefetchRef}
-              />
-            </div>
+          <div className="pointer-events-auto w-1/2 lg:w-1/4">
+            <MapPOIFilter
+              mapRef={mapRef}
+              mapLoaded={mapLoaded}
+              onBoundsChanged={() => setShowSearchHere(true)}
+              refetchRef={filterRefetchRef}
+            />
           </div>
         </div>
       )}
@@ -536,25 +290,10 @@ export default function DayDetailsMap({
         </div>
       )}
 
-      {/* Quick-add panel */}
-      {quickAdd && !isApproved && (
-        <QuickAddPanel
-          name={quickAdd.name}
-          category={quickAdd.category}
-          placeId={quickAdd.placeId}
-          coordinates={quickAdd.coordinates}
-          nextIndex={insertAfterIndex}
-          onAdd={(data) => {
-            onQuickAddActivity?.(data);
-            setQuickAdd(null);
-          }}
-          onDismiss={() => setQuickAdd(null)}
-        />
-      )}
-
       {/* Search POI action card (click on search-pois layer marker) */}
       {clickedSearchPOI && !isApproved && (
         <SearchPOIActionCard
+          key={clickedSearchPOI.id}
           place={clickedSearchPOI}
           editingItemId={editingItemId}
           nextIndex={insertAfterIndex}
@@ -562,13 +301,18 @@ export default function DayDetailsMap({
             onQuickAddActivity?.(data);
             searchClearRef.current?.();
             setClickedSearchPOI(null);
+            if (mapRef.current) clearPolygonHighlight(mapRef.current);
           }}
           onReplaceActivity={(p) => {
             onSelectSearchPOI?.(p);
             searchClearRef.current?.();
             setClickedSearchPOI(null);
+            if (mapRef.current) clearPolygonHighlight(mapRef.current);
           }}
-          onDismiss={() => setClickedSearchPOI(null)}
+          onDismiss={() => {
+            setClickedSearchPOI(null);
+            if (mapRef.current) clearPolygonHighlight(mapRef.current);
+          }}
         />
       )}
     </div>

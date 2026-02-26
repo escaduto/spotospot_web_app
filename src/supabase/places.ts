@@ -45,8 +45,8 @@ export interface PlaceBounds {
 /** Flat row returned by the RPC functions (coords already extracted) */
 export interface PlacePointResult {
   id: string;
-  source: string;
-  source_id: string;
+  place_source_id: string;
+  place_table: string;
   name_default: string;
   name_en: string | null;
   category: string | null;
@@ -74,75 +74,43 @@ export interface PlacePointResult {
 const LANDUSE_CATEGORY_GROUPS = new Set(["parks_and_nature"]);
 
 /**
- * Normalise a landuse_features row into a PlacePointResult.
+ * Normalise a landuse_features or building_features row into a PlacePointResult.
  * Coordinates come from the `label_point` geometry column.
+ * Both tables now share the same unified column schema as `places`.
  */
-function landuseRowToPlace(
-  row: Record<string, unknown>,
-): PlacePointResult | null {
-  const coords = parseWKBCoords(row.label_point as string | null);
-  if (!coords) return null;
+/**
+ * Normalise a raw RPC row (from `search_places`) into a PlacePointResult.
+ * The RPC returns coords as lat/lng directly — no WKB parsing needed.
+ */
+function rpcRowToPlace(r: Record<string, unknown>): PlacePointResult {
   return {
-    id: row.id as string,
-    source: "landuse",
-    source_id: row.id as string,
-    name_default: (row.name as string) ?? "",
-    name_en: null,
-    category: (row.category as string) ?? null,
-    categories: null,
-    category_group: (row.category_group as string) ?? null,
-    address: null,
-    city: null,
-    region: null,
-    country: null,
-    postal_code: null,
-    lat: coords.lat,
-    lng: coords.lng,
-    website_url: null,
-    phone_number: null,
-    // importance_score is typically 0-10 in landuse; normalise to 0-100
-    popularity_score: ((row.importance_score as number) ?? 0) * 10,
-    is_top_destination: null,
-    metadata: null,
+    id: (r.place_source_id as string) ?? (r.source_id as string) ?? "",
+    place_source_id: (r.place_source_id as string) ?? "",
+    place_table: (r.place_table as string) ?? "places",
+    name_default: (r.name_default as string) ?? "",
+    name_en: (r.name_en as string) ?? null,
+    category: (r.category as string) ?? null,
+    categories: (r.categories as string[]) ?? null,
+    category_group: (r.category_group as string) ?? null,
+    address: (r.address as string) ?? null,
+    city: (r.city as string) ?? null,
+    region: (r.region as string) ?? null,
+    country: (r.country as string) ?? null,
+    postal_code: (r.postal_code as string) ?? null,
+    lat: r.lat as number,
+    lng: r.lng as number,
+    website_url: (r.website_url as string) ?? null,
+    phone_number: (r.phone_number as string) ?? null,
+    popularity_score: (r.importance_score as number) ?? null,
+    is_top_destination: (r.is_top_destination as boolean) ?? null,
+    metadata: (r.metadata as Record<string, string | number>) ?? null,
   };
 }
 
 /**
- * Fetch landuse_features by category / category_group.
- * Uses the `label_point` geometry column for coordinates.
- */
-async function fetchLanduseByCategory(
-  categoryGroups: string[],
-  categories: string[],
-  limit = 200,
-): Promise<PlacePointResult[]> {
-  if (!categoryGroups.length && !categories.length) return [];
-  const supabase = createClient();
-  let q = supabase
-    .from("landuse_features")
-    .select("id, name, category, category_group, importance_score, label_point")
-    .not("label_point", "is", null);
-  if (categories.length > 0) {
-    q = q.in("category", categories);
-  } else {
-    q = q.in("category_group", categoryGroups);
-  }
-  const { data, error } = await q
-    .order("importance_score", { ascending: false, nullsFirst: false })
-    .limit(limit);
-  if (error || !data) {
-    console.error("fetchLanduseByCategory error:", error);
-    return [];
-  }
-  return (data as Record<string, unknown>[])
-    .map(landuseRowToPlace)
-    .filter(Boolean) as PlacePointResult[];
-}
-
-/**
- * Autocomplete search – matches against name, address, city.
- * Also searches landuse_features (by name) for area/region results.
- * Tries the `search_places` RPC first; falls back to direct ilike + WKB.
+ * Autocomplete search — delegates to the `search_places` RPC which queries
+ * all source tables (places, landuse_features, building_features) uniformly.
+ * Falls back to a direct `places` table ilike query if the RPC is unavailable.
  */
 export async function searchPlaces(
   query: string,
@@ -151,104 +119,91 @@ export async function searchPlaces(
 ): Promise<PlacePointResult[]> {
   const supabase = createClient();
   const q = query.trim();
+  if (q.length < 2) return [];
 
-  let rawData: unknown[] | null = null;
-  let fromRPC = false;
+  // ── Try the canonical RPC signature ─────────────────────────────────
+  const rpcArgs: Record<string, unknown> = { search_query: q, lim: limit };
+  if (mapCenter) {
+    rpcArgs.center_lat = mapCenter.lat;
+    rpcArgs.center_lng = mapCenter.lng;
+  }
+  const { data, error } = await supabase.rpc("search_places", rpcArgs);
 
-  // ── Try RPC with common param-name variants ──────────────────────────
-  if (q.length > 0) {
-    const rpcVariants = [
-      { search_query: q, lim: limit },
-      { q, lim: limit },
-      { query: q, limit },
-      { p_query: q, p_limit: limit },
-    ];
-    for (const params of rpcVariants) {
-      const { data, error } = await supabase.rpc("search_places", params);
-      if (!error && data) {
-        rawData = data as unknown[];
-        fromRPC = true;
-        break;
-      }
-    }
+  if (!error && data && (data as unknown[]).length > 0) {
+    return (data as Record<string, unknown>[]).map(rpcRowToPlace);
   }
 
-  // ── Direct places table fallback with WKB extraction ─────────────────
-  if (!rawData) {
-    const colSelect =
-      "id, source, source_id, name_default, name_en, category, categories, category_group, " +
-      "address, city, region, country, postal_code, coords, website_url, phone_number, " +
-      "popularity_score, is_top_destination, metadata";
-    let directQ = supabase.from("places").select(colSelect);
-    if (q.length > 0) {
-      directQ = directQ.or(
-        `name_default.ilike.%${q}%,name_en.ilike.%${q}%,address.ilike.%${q}%`,
-      );
-    }
-    const { data } = await directQ
-      .order("popularity_score", { ascending: false, nullsFirst: false })
-      .limit(limit);
-    rawData = data ?? [];
+  // ── Direct places table fallback (coords as WKB) ──────────────────────
+  const colSelect =
+    "id, name_default, name_en, category, categories, category_group, " +
+    "address, city, region, country, postal_code, coords, website_url, phone_number, " +
+    "popularity_score, is_top_destination, metadata";
+  const { data: fallback } = await supabase
+    .from("places")
+    .select(colSelect)
+    .or(`name_default.ilike.%${q}%,name_en.ilike.%${q}%,address.ilike.%${q}%`)
+    .order("popularity_score", { ascending: false, nullsFirst: false })
+    .limit(limit);
+
+  return ((fallback ?? []) as unknown as Record<string, unknown>[])
+    .map((p) => {
+      const coords = parseWKBCoords(p.coords as string | null);
+      if (!coords) return null;
+      return {
+        id: p.id as string,
+        place_source_id: p.id as string,
+        place_table: "places",
+        name_default: (p.name_default as string) ?? "",
+        name_en: (p.name_en as string) ?? null,
+        category: (p.category as string) ?? null,
+        categories: (p.categories as string[]) ?? null,
+        category_group: (p.category_group as string) ?? null,
+        address: (p.address as string) ?? null,
+        city: (p.city as string) ?? null,
+        region: (p.region as string) ?? null,
+        country: (p.country as string) ?? null,
+        postal_code: (p.postal_code as string) ?? null,
+        lat: coords.lat,
+        lng: coords.lng,
+        website_url: (p.website_url as string) ?? null,
+        phone_number: (p.phone_number as string) ?? null,
+        popularity_score: (p.popularity_score as number) ?? null,
+        is_top_destination: (p.is_top_destination as boolean) ?? null,
+        metadata: (p.metadata as Record<string, string | number>) ?? null,
+      } as PlacePointResult;
+    })
+    .filter(Boolean) as PlacePointResult[];
+}
+
+/**
+ * Filter-based POI search — used by MapPOIFilter to fetch POIs by category
+ * group/subcategory within the current viewport.  Delegates to `search_places`
+ * RPC which covers all source tables.
+ */
+export async function searchPlacesByFilter(
+  filterCategoryGroups: string[],
+  filterCategories: string[],
+  mapCenter?: { lat: number; lng: number },
+  limit = 150,
+): Promise<PlacePointResult[]> {
+  const supabase = createClient();
+
+  const rpcArgs: Record<string, unknown> = { search_query: "", lim: limit };
+  if (mapCenter) {
+    rpcArgs.center_lat = mapCenter.lat;
+    rpcArgs.center_lng = mapCenter.lng;
   }
+  if (filterCategoryGroups.length > 0)
+    rpcArgs.filter_category_groups = filterCategoryGroups;
+  if (filterCategories.length > 0) rpcArgs.filter_categories = filterCategories;
 
-  // ── Also query landuse_features by name ──────────────────────────────
-  let landuseResults: PlacePointResult[] = [];
-  if (q.length > 0) {
-    const { data: lu } = await supabase
-      .from("landuse_features")
-      .select(
-        "id, name, category, category_group, importance_score, label_point",
-      )
-      .ilike("name", `%${q}%`)
-      .not("name", "is", null)
-      .not("label_point", "is", null)
-      .order("importance_score", { ascending: false, nullsFirst: false })
-      .limit(20);
-    if (lu) {
-      landuseResults = (lu as Record<string, unknown>[])
-        .map(landuseRowToPlace)
-        .filter(Boolean) as PlacePointResult[];
-    }
+  const { data, error } = await supabase.rpc("search_places", rpcArgs);
+
+  if (error) {
+    console.error("searchPlacesByFilter error:", error);
+    return [];
   }
-
-  // ── Normalise places to PlacePointResult ─────────────────────────────
-  let places: PlacePointResult[];
-  if (fromRPC) {
-    places = (rawData as PlacePointResult[]) ?? [];
-  } else {
-    places = (rawData as Record<string, unknown>[])
-      .map((p) => {
-        const coords = parseWKBCoords(p.coords as string | null);
-        if (!coords) return null;
-        return {
-          ...(p as unknown as Omit<PlacePointResult, "lat" | "lng">),
-          lat: coords.lat,
-          lng: coords.lng,
-        } as PlacePointResult;
-      })
-      .filter(Boolean) as PlacePointResult[];
-  }
-
-  // Merge, deduplicate by id
-  const seen = new Set(places.map((p) => p.id));
-  const merged = [...places, ...landuseResults.filter((l) => !seen.has(l.id))];
-
-  // ── Sort by distance + popularity when mapCenter is available ────────
-  if (mapCenter && merged.length > 0) {
-    merged.sort((a, b) => {
-      const dA = getDistance(mapCenter.lat, mapCenter.lng, a.lat, a.lng);
-      const dB = getDistance(mapCenter.lat, mapCenter.lng, b.lat, b.lng);
-      const scoreA =
-        Math.max(0, 1 - dA / 50) * 0.6 +
-        ((a.popularity_score ?? 0) / 100) * 0.4;
-      const scoreB =
-        Math.max(0, 1 - dB / 50) * 0.6 +
-        ((b.popularity_score ?? 0) / 100) * 0.4;
-      return scoreB - scoreA;
-    });
-  }
-
-  return merged.slice(0, limit);
+  return ((data ?? []) as Record<string, unknown>[]).map(rpcRowToPlace);
 }
 
 /**
@@ -327,7 +282,12 @@ export async function fetchPOIsInBounds(
       const coords = parseWKBCoords(p.coords as string | null);
       if (!coords) return null;
       return {
-        ...(p as unknown as Omit<PlacePointResult, "lat" | "lng">),
+        ...(p as unknown as Omit<
+          PlacePointResult,
+          "lat" | "lng" | "place_source_id" | "place_table"
+        >),
+        place_source_id: p.id as string,
+        place_table: "places",
         lat: coords.lat,
         lng: coords.lng,
       } as PlacePointResult;
@@ -342,29 +302,6 @@ export async function fetchPOIsInBounds(
       p.lat >= bounds.minLat &&
       p.lat <= bounds.maxLat,
   );
-
-  // ── Landuse label points ─────────────────────────────────────────────
-  const { data: lu } = await supabase
-    .from("landuse_features")
-    .select("id, name, category, category_group, importance_score, label_point")
-    .not("label_point", "is", null)
-    .order("importance_score", { ascending: false, nullsFirst: false })
-    .limit(limit);
-  if (lu) {
-    const landuse = (lu as Record<string, unknown>[])
-      .map(landuseRowToPlace)
-      .filter(Boolean) as PlacePointResult[];
-    // bounds filter for landuse too
-    const luInBounds = landuse.filter(
-      (p) =>
-        p.lng >= bounds.minLng &&
-        p.lng <= bounds.maxLng &&
-        p.lat >= bounds.minLat &&
-        p.lat <= bounds.maxLat,
-    );
-    const seenIds = new Set(places.map((p) => p.id));
-    places = [...places, ...luInBounds.filter((l) => !seenIds.has(l.id))];
-  }
 
   // ── Sort by proximity × popularity ──────────────────────────────────
   places.sort((a, b) => {
@@ -422,27 +359,32 @@ export async function fetchPlacesByCategory(
       const coords = parseWKBCoords(p.coords as string | null);
       if (!coords) return null;
       return {
-        ...(p as unknown as Omit<PlacePointResult, "lat" | "lng">),
+        ...(p as unknown as Omit<
+          PlacePointResult,
+          "lat" | "lng" | "place_source_id" | "place_table"
+        >),
+        place_source_id: p.id as string,
+        place_table: "places",
         lat: coords.lat,
         lng: coords.lng,
       } as PlacePointResult;
     })
     .filter(Boolean) as PlacePointResult[];
 
-  // ── Merge landuse_features for area-type groups ───────────────────────
+  // ── Merge area-type places (parks, landuse, etc.) via search_places RPC ──
   const groupsNeedingLanduse = categoryGroups.filter((g) =>
     LANDUSE_CATEGORY_GROUPS.has(g),
   );
-  // When subcategories are selected, check if any belong to nature groups
   const catsNeedingLanduse =
     categories.length > 0 &&
     categoryGroups.some((g) => LANDUSE_CATEGORY_GROUPS.has(g))
       ? categories
       : [];
   if (groupsNeedingLanduse.length > 0 || catsNeedingLanduse.length > 0) {
-    const landuse = await fetchLanduseByCategory(
+    const landuse = await searchPlacesByFilter(
       groupsNeedingLanduse,
       catsNeedingLanduse,
+      mapCenter ?? undefined,
       fetchLimit,
     );
     const seenIds = new Set(places.map((p) => p.id));

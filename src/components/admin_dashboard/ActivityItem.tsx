@@ -92,7 +92,7 @@ export default function ActivityItem({
                     ⏱️ {item.duration_minutes}min
                   </span>
                 )}
-                {item.place_id && (
+                {item.place_source_id && (
                   <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
                     ✓ Matched
                   </span>

@@ -143,7 +143,10 @@ export type TransportationType =
 export interface ItineraryItem {
   id: string;
   itinerary_day_id: string;
-  place_id: string | null; // references Places table for POI details
+  /** Row id in the source table (places, landuse_features, building_features, etc.) */
+  place_source_id: string | null;
+  /** Which table the place belongs to */
+  place_table: string | null;
   title: string;
   description: string | null;
   item_type: string;
@@ -167,10 +170,13 @@ export interface ItineraryItem {
   updated_at: string;
 }
 
+export type place_source_table = "itinerary_items" | "itinerary_days" | "trips";
+
 export interface SavedPlaces {
   id: string;
   user_id: string;
-  trip_id: string | null;
+  place_source_id: string;
+  place_table: place_source_table;
   name: string;
   description: string | null;
   category: string | null;
@@ -199,7 +205,7 @@ export interface SearchQuery {
 //Places
 
 type PlaceSource = "overture" | "foursquare" | "google" | "manual";
-type PlaceCategoryGroup =
+export type PlaceCategoryGroup =
   | "food_and_drink"
   | "accommodation"
   | "tourism_and_attractions"
@@ -239,33 +245,51 @@ export interface Place {
   updated_at: string;
 }
 
-export interface PlacesDetails {
+// ── Unified shape for landuse_features and building_features ──────────────────
+// Both tables now mirror the `places` table schema.
+
+export interface LanduseFeaturesRow {
   id: string;
-  place_id: string;
-  provider: string; // e.g. "google", "foursquare"
-  provider_place_id: string; // e.g. Google Place ID, Foursquare Venue ID
-  rating: number | null; // 1-5
-  rating_count: number | null;
-  popularity: number | null; // e.g. 0-100 based on foot traffic or user ratings
-  price_level: number | null; // 0-4
-  opening_hours: Record<string, string> | null; // e.g. { "monday": "9:00-17:00", "tuesday": "9:00-17:00", ... }
-  photos: Array<{
-    url: string;
-    width: number;
-    height: number;
-    blurhash: string | null;
-    metadata: Record<string, string | number> | null; // e.g. { photographer: "John Doe", photographer_url: "", alt_text: "" }
-  }> | null;
-  tips: Record<string, string> | null; // e.g. { "en": ["Great place!", "Must visit!"], "fr": ["Endroit génial!", "À visiter absolument!"] }
-  description: string | null;
+  name_default: string;
+  name_en: string | null;
+  category: string | null;
+  categories: string[] | null;
+  category_group: PlaceCategoryGroup | null;
+  address: string | null;
+  city: string | null;
+  region: string | null;
+  country: string | null;
+  postal_code: string | null;
   website_url: string | null;
   phone_number: string | null;
-  social_media: Record<string, string> | null; // e.g. { twitter: "https://twitter.com/venue", instagram: "https://instagram.com/venue" }
-  attributes: Record<string, string | number | boolean> | null; // e.g. { "wheelchair_accessible": true, "family_friendly": false }
-  tastes: string[] | null; // e.g. ["vegan", "gluten-free", "spicy"]
-  fetched_at: string; // ISO 8601 string of when the details were last fetched from the provider
-  stale_after: string; // ISO 8601 string indicating when the details should be considered stale and refetched from the provider
+  importance_score: number | null;
+  is_top_destination: boolean | null;
+  metadata: Record<string, string | number> | null;
+  geometry: string | null; // PostGIS polygon/multipolygon
+  label_point: string | null; // PostGIS point for map label
+  created_at: string;
+  updated_at: string;
+}
 
+export interface BuildingFeaturesRow {
+  id: string;
+  name_default: string;
+  name_en: string | null;
+  category: string | null;
+  categories: string[] | null;
+  category_group: PlaceCategoryGroup | null;
+  address: string | null;
+  city: string | null;
+  region: string | null;
+  country: string | null;
+  postal_code: string | null;
+  website_url: string | null;
+  phone_number: string | null;
+  importance_score: number | null;
+  is_top_destination: boolean | null;
+  metadata: Record<string, string | number> | null;
+  geometry: string | null; // PostGIS polygon/multipolygon
+  label_point: string | null; // PostGIS point for map label
   created_at: string;
   updated_at: string;
 }

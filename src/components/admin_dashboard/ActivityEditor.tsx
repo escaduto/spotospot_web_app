@@ -44,7 +44,8 @@ export default function ActivityEditor({
     description: item?.description ?? "",
     duration_minutes: item?.duration_minutes ?? 60,
     coords: item?.location_coords ?? null,
-    place_id: item?.place_id ?? null,
+    place_source_id: item?.place_source_id ?? null,
+    place_table: item?.place_table ?? null,
     start_time: item?.start_time ?? "",
     end_time: item?.end_time ?? "",
   });
@@ -105,7 +106,8 @@ export default function ActivityEditor({
   const handleSelectPOIInternal = (place: PlacePointResult) => {
     setForm((f) => ({
       ...f,
-      place_id: place.id,
+      place_source_id: place.id,
+      place_table: place.place_table || "places",
       location_name: place.name_en || place.name_default,
       coords: `POINT(${place.lng} ${place.lat})`,
     }));
@@ -148,7 +150,7 @@ export default function ActivityEditor({
       <div>
         <label className="text-xs font-medium text-gray-600">
           Link to POI{" "}
-          {form.place_id && (
+          {form.place_source_id && (
             <span className="text-green-600 inline-flex items-center gap-0.5">
               <TaskAltIcon style={{ fontSize: 11 }} /> Matched
             </span>
@@ -198,7 +200,7 @@ export default function ActivityEditor({
           )}
         </div>
 
-        {form.place_id && (
+        {form.place_source_id && (
           <div className="mt-1 text-xs">
             <span className="text-green-600">
               Matched to: {form.location_name}
@@ -207,7 +209,8 @@ export default function ActivityEditor({
               onClick={() =>
                 setForm((f) => ({
                   ...f,
-                  place_id: null,
+                  place_source_id: null,
+                  place_table: null,
                   location_name: "",
                   coords: null,
                 }))

@@ -253,7 +253,7 @@ export default function DayDetailsView({
       {/* ── Left floating panel ──────────────────────────────────── */}
       <div
         className={`absolute left-0 top-0 bottom-0 z-10 flex transition-all duration-300 ${
-          panelOpen ? "w-1/2 md:w-1/3 lg:w-1/4" : "w-0"
+          panelOpen ? "w-1/2 lg:w-1/3 xl:w-1/4" : "w-0"
         }`}
       >
         {/* Panel body */}

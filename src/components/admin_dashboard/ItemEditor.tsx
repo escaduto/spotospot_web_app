@@ -29,7 +29,8 @@ export default function ItemEditor({
     location_address: item?.location_address ?? "",
     lat: item?.location_coords?.lat?.toString() ?? "",
     lng: item?.location_coords?.lng?.toString() ?? "",
-    place_id: item?.place_id ?? "",
+    place_source_id: item?.place_source_id ?? "",
+    place_table: item?.place_table ?? "places",
     start_time: item?.start_time ?? "",
     end_time: item?.end_time ?? "",
     duration_minutes: item?.duration_minutes?.toString() ?? "",
@@ -59,7 +60,8 @@ export default function ItemEditor({
       location_name: form.location_name || null,
       location_address: form.location_address || null,
       location_coords: coords,
-      place_id: form.place_id || null,
+      place_source_id: form.place_source_id || null,
+      place_table: form.place_source_id ? form.place_table || "places" : null,
       start_time: form.start_time || null,
       end_time: form.end_time || null,
       duration_minutes: form.duration_minutes
@@ -112,9 +114,14 @@ export default function ItemEditor({
           onChange={(v) => set("lng", v)}
         />
         <MiniInput
-          label="Place ID"
-          value={form.place_id}
-          onChange={(v) => set("place_id", v)}
+          label="Place Source ID"
+          value={form.place_source_id}
+          onChange={(v) => set("place_source_id", v)}
+        />
+        <MiniInput
+          label="Place Table"
+          value={form.place_table}
+          onChange={(v) => set("place_table", v)}
         />
         <MiniInput
           label="Start Time"

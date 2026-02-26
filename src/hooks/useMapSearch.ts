@@ -9,7 +9,8 @@ import { getPOIConfig } from "@/src/map/scripts/poi-config";
 export interface MapSearchResult {
   id: string;
   /** "places" | "landuse_features" | "building_features" */
-  source_table: string;
+  place_table: string;
+  place_source_id: string;
   name: string;
   category: string | null;
   category_group: string | null;
@@ -58,7 +59,8 @@ export function useMapSearch(mapCenter?: { lng: number; lat: number }) {
           const cfg = getPOIConfig(p.category ?? null);
           return {
             id: p.id,
-            source_table: p.source || "places",
+            place_table: p.place_table || "places",
+            place_source_id: p.place_source_id || p.id,
             name: p.name_default || p.name_en || "",
             category: p.category ?? null,
             category_group: p.category_group ?? null,

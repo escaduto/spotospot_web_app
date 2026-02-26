@@ -754,6 +754,51 @@ export async function handleLabelClick(
   }
 }
 
+/**
+ * Highlight the polygon for a landuse / building feature by its DB id.
+ * For plain POI source tables the polygon highlight is cleared instead.
+ *
+ * Pass `sourceId` = the `source_id` tile property (the row's `_id` column).
+ */
+export async function highlightPolygonByID(
+  map: maplibregl.Map,
+  sourceId: string,
+  sourceTable: string,
+  color?: string,
+): Promise<void> {
+  if (!POLYGON_TABLES.has(sourceTable)) {
+    clearPolygonHighlight(map);
+    return;
+  }
+
+  const polygonFeature = await getPolygonGeometry(
+    sourceTable as "landuse_features" | "building_features",
+    sourceId,
+  );
+
+  if (!polygonFeature) {
+    clearPolygonHighlight(map);
+    return;
+  }
+
+  const resolvedColor = color ?? "#6366f1";
+  const featureWithColor: GeoJSON.Feature = {
+    ...polygonFeature,
+    properties: { ...(polygonFeature.properties ?? {}), color: resolvedColor },
+  };
+
+  const src = map.getSource(POI_POLYGON_HIGHLIGHT_SOURCE_ID) as
+    | maplibregl.GeoJSONSource
+    | undefined;
+  src?.setData({ type: "FeatureCollection", features: [featureWithColor] });
+
+  // const bounds = new maplibregl.LngLatBounds();
+  // extendBoundsFromGeometry(bounds, polygonFeature.geometry as GeoJSON.Geometry);
+  // if (!bounds.isEmpty()) {
+  //   map.fitBounds(bounds, { padding: 60, duration: 600 });
+  // }
+}
+
 // -------------------------------------------------
 // Search-result highlight helpers
 // -------------------------------------------------

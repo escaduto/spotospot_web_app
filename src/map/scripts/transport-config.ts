@@ -14,91 +14,91 @@ export interface TransportConfig {
 const TRANSPORT_CONFIGS: Record<string, TransportConfig> = {
   walking: {
     label: "Walking",
-    icon: "pedestrian",
+    icon: "pedestrian_t",
     color: "#22c55e", // green-500
     dashArray: [2, 4],
     emoji: "🚶",
   },
   running: {
     label: "Running",
-    icon: "cross_country_skiing",
+    icon: "cross_country_skiing_t",
     color: "#16a34a", // green-600
     dashArray: [3, 3],
     emoji: "🏃",
   },
   hiking: {
     label: "Hiking",
-    icon: "climbing",
+    icon: "climbing_t",
     color: "#15803d", // green-700
     dashArray: [4, 3],
     emoji: "🥾",
   },
   driving: {
     label: "Driving",
-    icon: "car",
+    icon: "car_t",
     color: "#3b82f6", // blue-500
     emoji: "🚗",
   },
   rideshare: {
     label: "Rideshare",
-    icon: "taxi",
+    icon: "taxi_t",
     color: "#2563eb", // blue-600
     emoji: "🚕",
   },
   car_rental: {
     label: "Car Rental",
-    icon: "car-rental",
+    icon: "car-rental_t",
     color: "#1d4ed8", // blue-700
     emoji: "🚙",
   },
   cycling: {
     label: "Cycling",
-    icon: "bicycle",
+    icon: "bicycle_t",
     color: "#f97316", // orange-500
     emoji: "🚲",
   },
   bikeshare: {
     label: "Bikeshare",
-    icon: "bicycle-share",
+    icon: "bicycle-share_t",
     color: "#ea580c", // orange-600
     emoji: "🚲",
   },
   flight: {
     label: "Flight",
-    icon: "airport",
+    icon: "airport_t",
     color: "#8b5cf6", // violet-500
     dashArray: [8, 6],
     emoji: "✈️",
   },
   ferry: {
     label: "Ferry",
-    icon: "ferry",
+    icon: "ferry_t",
     color: "#06b6d4", // cyan-500
     dashArray: [6, 4],
     emoji: "⛴️",
   },
   train: {
     label: "Train",
-    icon: "rail",
-    color: "#4f4f4f", // gray-500
+    icon: "rail_t",
+    color: "#ef4444", // red-500
     emoji: "🚆",
   },
   bus: {
     label: "Bus",
-    icon: "bus",
+    icon: "bus_t",
     color: "#eab308", // yellow-500
     emoji: "🚌",
   },
   "muni/tram": {
     label: "Muni/Tram",
-    icon: "rail-light",
+    icon: "rail-light_t",
     color: "#d97706", // amber-600
     dashArray: [8, 3],
     emoji: "🚋",
   },
   other: {
     label: "Other",
-    icon: "marker",
+    icon: "marker_t",
     color: "#6b7280", // gray-500
     dashArray: [4, 4],
     emoji: "📍",
@@ -107,7 +107,7 @@ const TRANSPORT_CONFIGS: Record<string, TransportConfig> = {
 
 const DEFAULT_CONFIG: TransportConfig = {
   label: "Route",
-  icon: "marker",
+  icon: "marker_t",
   color: "#6b7280",
   dashArray: [4, 4],
   emoji: "📍",
@@ -115,7 +115,7 @@ const DEFAULT_CONFIG: TransportConfig = {
 
 const MULTIPLE_CONFIG: TransportConfig = {
   label: "Multiple",
-  icon: "triangle",
+  icon: "triangle_t",
   color: "#a855f7", // purple-500
   dashArray: [5, 3],
   emoji: "✨",
