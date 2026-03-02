@@ -4,6 +4,9 @@ import { useState } from "react";
 import { useAuth } from "@/src/hooks/useAuth";
 import AuthModal from "./AuthModal";
 import Link from "next/link";
+import Tooltip from "@mui/material/Tooltip";
+import IconButton from "@mui/material/IconButton";
+import AddIcon from "@mui/icons-material/Add";
 
 export default function Navbar() {
   const { user, profile, loading, signOut } = useAuth();
@@ -52,6 +55,29 @@ export default function Navbar() {
 
           {/* Right side */}
           <div className="flex items-center gap-3">
+            {/* Create new plan */}
+            {!loading && user && (
+              <Tooltip title="Create new plan" arrow>
+                <IconButton
+                  component={Link}
+                  href="/create_new_plan"
+                  size="small"
+                  sx={{
+                    background: "linear-gradient(135deg, #0d9488, #06b6d4)",
+                    color: "#fff",
+                    width: 32,
+                    height: 32,
+                    "&:hover": {
+                      filter: "brightness(1.12)",
+                      background: "linear-gradient(135deg, #0d9488, #06b6d4)",
+                    },
+                  }}
+                >
+                  <AddIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </Tooltip>
+            )}
+
             {loading ? (
               <div className="h-8 w-20 animate-pulse rounded-lg bg-gray-200" />
             ) : user ? (
