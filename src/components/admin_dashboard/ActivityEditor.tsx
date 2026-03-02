@@ -10,6 +10,8 @@ import TaskAltIcon from "@mui/icons-material/TaskAlt";
 
 interface Props {
   item?: ItineraryItem;
+  /** Pre-fill values for a new item (e.g. from POI quick-add). Ignored when `item` is set. */
+  prefill?: Partial<ItineraryItem>;
   dayId: string;
   nextIndex?: number;
   onSave: (updates: Partial<ItineraryItem>) => Promise<void>;
@@ -25,6 +27,7 @@ interface Props {
 
 export default function ActivityEditor({
   item,
+  prefill,
   dayId,
   nextIndex = 0,
   onSave,
@@ -38,20 +41,22 @@ export default function ActivityEditor({
 }: Props) {
   const isNew = !item;
   const [form, setForm] = useState({
-    title: item?.title ?? "",
-    location_name: item?.location_name ?? "",
-    item_type: item?.item_type ?? "activity",
-    description: item?.description ?? "",
-    duration_minutes: item?.duration_minutes ?? 60,
-    coords: item?.location_coords ?? null,
-    place_source_id: item?.place_source_id ?? null,
-    place_table: item?.place_table ?? null,
-    start_time: item?.start_time ?? "",
-    end_time: item?.end_time ?? "",
+    title: item?.title ?? prefill?.title ?? "",
+    location_name: item?.location_name ?? prefill?.location_name ?? "",
+    item_type: item?.item_type ?? prefill?.item_type ?? "activity",
+    description: item?.description ?? prefill?.description ?? "",
+    duration_minutes: item?.duration_minutes ?? prefill?.duration_minutes ?? 60,
+    coords: item?.location_coords ?? prefill?.location_coords ?? null,
+    place_source_id: item?.place_source_id ?? prefill?.place_source_id ?? null,
+    place_table: item?.place_table ?? prefill?.place_table ?? null,
+    start_time: item?.start_time ?? prefill?.start_time ?? "",
+    end_time: item?.end_time ?? prefill?.end_time ?? "",
   });
 
-  // Track whether coords were explicitly set via POI selection
-  const [coordsManuallySet, setCoordsManuallySet] = useState(false);
+  // Track whether coords were explicitly set via POI selection or prefill
+  const [coordsManuallySet, setCoordsManuallySet] = useState(
+    !item && !!prefill?.location_coords,
+  );
 
   const [showPOISearch, setShowPOISearch] = useState(false);
   const [saving, setSaving] = useState(false);

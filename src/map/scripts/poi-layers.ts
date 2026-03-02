@@ -9,7 +9,7 @@
  *                Properties: id, source_table, name, category, category_group,
  *                            importance_score, area_m2.
  *
- * Clicking a label with source_table in (landuse_features, building_features)
+ * Clicking a label with source_table in (landuse_features, infrastructure_features)
  * looks up the matching polygon, highlights its fill+outline, and fits the map
  * to its full extent.
  */
@@ -51,7 +51,7 @@ export const POI_HIGHLIGHT_LABEL_LAYER_ID = "poi-highlight-labels";
 /** Source tables that carry polygon geometry. */
 const POLYGON_TABLES: ReadonlySet<string> = new Set([
   "landuse_features",
-  "building_features",
+  "infrastructure_features",
 ]);
 
 /** Layers that respond to click / hover interactions. */
@@ -141,15 +141,30 @@ export function buildPOIBaseFilter(): maplibregl.FilterSpecification {
       [
         "in",
         ["get", "source_table"],
-        ["literal", ["landuse_features", "building_features"]],
+        ["literal", ["landuse_features", "infrastructure_features"]],
       ],
       [
         "any",
         ["all", [">=", ["get", "importance_score"], 0.8], [">=", ["zoom"], 10]],
-        ["all", [">=", ["get", "importance_score"], 0.7], [">=", ["zoom"], 11]],
-        ["all", [">=", ["get", "importance_score"], 0.6], [">=", ["zoom"], 13]],
-        ["all", [">=", ["get", "importance_score"], 0.5], [">=", ["zoom"], 14]],
-        ["all", [">=", ["zoom"], 14]],
+        [
+          "all",
+          [">=", ["get", "importance_score"], 0.75],
+          [">=", ["zoom"], 11],
+        ],
+        ["all", [">=", ["get", "importance_score"], 0.7], [">=", ["zoom"], 12]],
+        [
+          "all",
+          [">=", ["get", "importance_score"], 0.61],
+          [">=", ["zoom"], 13],
+        ],
+        ["all", [">=", ["get", "importance_score"], 0.5], [">=", ["zoom"], 15]],
+        [
+          "all",
+          [">=", ["get", "importance_score"], 0.35],
+          [">=", ["zoom"], 16],
+        ],
+        ["all", [">=", ["get", "importance_score"], 0.2], [">=", ["zoom"], 17]],
+        ["all", [">=", ["zoom"], 18]],
       ],
     ],
     // PLACES (cascaded by importance)
@@ -160,27 +175,25 @@ export function buildPOIBaseFilter(): maplibregl.FilterSpecification {
         "any",
         [
           "all",
-          [">=", ["get", "importance_score"], 0.88],
-          [">=", ["zoom"], 12],
-        ],
-        [
-          "all",
-          [">=", ["get", "importance_score"], 0.84],
+          [">=", ["get", "importance_score"], 0.75],
           [">=", ["zoom"], 13],
         ],
-        ["all", [">=", ["get", "importance_score"], 0.8], [">=", ["zoom"], 14]],
         [
           "all",
-          [">=", ["get", "importance_score"], 0.75],
-          [">=", ["zoom"], 15],
+          ["==", ["get", "category_group"], "arts_and_culture"],
+          [">=", ["get", "importance_score"], 0.6],
+          [">=", ["zoom"], 14],
         ],
-        ["all", [">=", ["get", "importance_score"], 0.7], [">=", ["zoom"], 16]],
         [
           "all",
-          [">=", ["get", "importance_score"], 0.65],
-          [">=", ["zoom"], 17],
+          ["==", ["get", "category_group"], "tourism_and_attractions"],
+          [">=", ["get", "importance_score"], 0.6],
+          [">=", ["zoom"], 14],
         ],
-        ["all", [">=", ["get", "importance_score"], 0.5], [">=", ["zoom"], 18]],
+        ["all", [">=", ["get", "importance_score"], 0.7], [">=", ["zoom"], 14]],
+        ["all", [">=", ["get", "importance_score"], 0.6], [">=", ["zoom"], 15]],
+
+        ["all", [">=", ["zoom"], 18]],
       ],
     ],
   ] as unknown as maplibregl.FilterSpecification;
@@ -683,7 +696,7 @@ export function clearPolygonHighlight(map: maplibregl.Map): void {
 /**
  * Handle a click on any "labels" source-layer feature.
  *
- * - If the feature belongs to landuse_features / building_features, queries
+ * - If the feature belongs to landuse_features / landuse_features, queries
  *   the "polygons" source-layer for the matching polygon, highlights it as a
  *   semi-opaque filled overlay, and fits the map to its full extent.
  * - For plain POI points the polygon highlight is cleared.
@@ -725,7 +738,7 @@ export async function handleLabelClick(
   // Fetch the complete polygon geometry from Supabase to avoid tile-edge
   // clipping artifacts that occur with querySourceFeatures on large polygons.
   const polygonFeature = await getPolygonGeometry(
-    sourceTable as "landuse_features" | "building_features",
+    sourceTable as "landuse_features" | "infrastructure_features",
     sourceId,
   );
 
@@ -772,7 +785,7 @@ export async function highlightPolygonByID(
   }
 
   const polygonFeature = await getPolygonGeometry(
-    sourceTable as "landuse_features" | "building_features",
+    sourceTable as "landuse_features" | "infrastructure_features",
     sourceId,
   );
 

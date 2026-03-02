@@ -74,7 +74,7 @@ export interface PlacePointResult {
 const LANDUSE_CATEGORY_GROUPS = new Set(["parks_and_nature"]);
 
 /**
- * Normalise a landuse_features or building_features row into a PlacePointResult.
+ * Normalise a landuse_features or infrastructure_features row into a PlacePointResult.
  * Coordinates come from the `label_point` geometry column.
  * Both tables now share the same unified column schema as `places`.
  */
@@ -109,7 +109,7 @@ function rpcRowToPlace(r: Record<string, unknown>): PlacePointResult {
 
 /**
  * Autocomplete search — delegates to the `search_places` RPC which queries
- * all source tables (places, landuse_features, building_features) uniformly.
+ * all source tables (places, landuse_features, infrastructure_features) uniformly.
  * Falls back to a direct `places` table ilike query if the RPC is unavailable.
  */
 export async function searchPlaces(
@@ -454,7 +454,7 @@ function toRad(degrees: number): number {
  * GeoJSON objects in the JSON response, so no custom RPC is required.
  */
 export async function getPolygonGeometry(
-  sourceTable: "landuse_features" | "building_features",
+  sourceTable: "landuse_features" | "infrastructure_features",
   sourceId: string,
 ): Promise<GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null> {
   const supabase = createClient();

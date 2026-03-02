@@ -143,7 +143,7 @@ export type TransportationType =
 export interface ItineraryItem {
   id: string;
   itinerary_day_id: string;
-  /** Row id in the source table (places, landuse_features, building_features, etc.) */
+  /** Row id in the source table (places, landuse_features, infrastructure_features, etc.) */
   place_source_id: string | null;
   /** Which table the place belongs to */
   place_table: string | null;
@@ -245,7 +245,7 @@ export interface Place {
   updated_at: string;
 }
 
-// ── Unified shape for landuse_features and building_features ──────────────────
+// ── Unified shape for landuse_features and infrastructure_features ──────────────────
 // Both tables now mirror the `places` table schema.
 
 export interface LanduseFeaturesRow {

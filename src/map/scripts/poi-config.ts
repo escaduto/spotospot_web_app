@@ -160,6 +160,8 @@ export const poiCategoryList = [
   "cemetery",
   "sailing",
   // other
+  "circle-other",
+  "circle-water",
   "circle",
 ] as const;
 
@@ -782,17 +784,11 @@ export const POI_GROUPS: Record<string, POICONFIG> = {
   },
   beach: {
     label: "Beach",
-    color: "#fcff45",
+    color: "#DDB892",
     bgColor: "#FEF9E7",
     icon: "beach",
   },
-  lake: { label: "Lake", color: "#08a0ff", bgColor: "#EAFAF1", icon: "water" },
-  river: {
-    label: "River",
-    color: "#08a0ff",
-    bgColor: "#EAFAF1",
-    icon: "water",
-  },
+
   waterfall: {
     label: "Waterfall",
     color: "#08a0ff",
@@ -1506,6 +1502,36 @@ export const POI_GROUPS: Record<string, POICONFIG> = {
     color: "#0070ff",
     bgColor: "#EFEBE9",
     icon: "sailing",
+  },
+  lake: {
+    label: "Lake",
+    color: "#08a0ff",
+    bgColor: "#EAFAF1",
+    icon: "circle-water",
+  },
+  river: {
+    label: "River",
+    color: "#08a0ff",
+    bgColor: "#EAFAF1",
+    icon: "circle-water",
+  },
+  pond: {
+    label: "Pond",
+    color: "#08a0ff",
+    bgColor: "#EFEBE9",
+    icon: "circle-water",
+  },
+  military: {
+    label: "Military",
+    color: "#95A5A6",
+    bgColor: "#EFEBE9",
+    icon: "circle-other",
+  },
+  bay: {
+    label: "Bay",
+    color: "#08a0ff",
+    bgColor: "#EFEBE9",
+    icon: "circle-water",
   },
 };
 

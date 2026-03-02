@@ -8,7 +8,7 @@ import { getPOIConfig } from "@/src/map/scripts/poi-config";
 
 export interface MapSearchResult {
   id: string;
-  /** "places" | "landuse_features" | "building_features" */
+  /** "places" | "landuse_features" | "infrastructure_features" */
   place_table: string;
   place_source_id: string;
   name: string;

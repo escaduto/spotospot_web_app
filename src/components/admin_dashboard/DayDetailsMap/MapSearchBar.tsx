@@ -181,7 +181,7 @@ export default function MapSearchBar({
 
   const subtitle = (r: MapSearchResult) => {
     if (r.place_table === "landuse_features") return "Area / Landmark";
-    if (r.place_table === "building_features") return "Building";
+    if (r.place_table === "infrastructure_features") return "Infrastructure";
     return [r.address, r.city, r.country].filter(Boolean).join(", ");
   };
 

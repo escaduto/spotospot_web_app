@@ -12,6 +12,8 @@ interface UseActivityLayersArgs {
   onSelectItem: (itemId: string) => void;
   onUpdateCoords?: (itemId: string, lng: number, lat: number) => void;
   centerPoint: { lng: number; lat: number } | null;
+  /** When true the draggable repositioning marker is shown and all other map interactions are suppressed */
+  dragModeActive?: boolean;
 }
 
 /**
@@ -30,9 +32,15 @@ export function useActivityLayers({
   onSelectItem,
   onUpdateCoords,
   centerPoint,
+  dragModeActive = false,
 }: UseActivityLayersArgs) {
   const dragMarkerRef = useRef<maplibregl.Marker | null>(null);
   const repPointMarkerRef = useRef<maplibregl.Marker | null>(null);
+  // Keep dragModeActive in a ref so event handlers always see the latest value
+  const dragModeRef = useRef(dragModeActive);
+  useEffect(() => {
+    dragModeRef.current = dragModeActive;
+  }, [dragModeActive]);
 
   // ── Push data into GeoJSON source ──
   useEffect(() => {
@@ -92,7 +100,7 @@ export function useActivityLayers({
     });
   }, [items, selectedItemId, editingItemId, mapLoaded, mapRef]);
 
-  // ── Draggable marker for the editing item ──
+  // ── Draggable marker for the editing item — only when drag mode is active ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
@@ -101,7 +109,8 @@ export function useActivityLayers({
     dragMarkerRef.current?.remove();
     dragMarkerRef.current = null;
 
-    if (!editingItemId || !onUpdateCoords) return;
+    // Only show the marker when the user has explicitly enabled drag mode
+    if (!dragModeActive || !editingItemId || !onUpdateCoords) return;
 
     const editItem = items.find((i) => i.id === editingItemId);
     if (!editItem) return;
@@ -137,7 +146,7 @@ export function useActivityLayers({
       marker.remove();
       dragMarkerRef.current = null;
     };
-  }, [editingItemId, items, mapLoaded, mapRef, onUpdateCoords]);
+  }, [dragModeActive, editingItemId, items, mapLoaded, mapRef, onUpdateCoords]);
 
   // ── Click on activity circle → select ──
   const hoverPopupRef = useRef<maplibregl.Popup | null>(null);
@@ -167,6 +176,8 @@ export function useActivityLayers({
         features?: maplibregl.MapGeoJSONFeature[];
       },
     ) => {
+      // Suppress hover tooltip when repositioning
+      if (dragModeRef.current) return;
       if (!e.features?.length) return;
       const feat = e.features[0];
       const fid = feat.id as number;
@@ -215,6 +226,8 @@ export function useActivityLayers({
         features?: maplibregl.MapGeoJSONFeature[];
       },
     ) => {
+      // Suppress activity selection when repositioning
+      if (dragModeRef.current) return;
       const itemId = e.features?.[0]?.properties?._itemId;
       if (itemId) onSelectItem(itemId);
     };
@@ -231,10 +244,17 @@ export function useActivityLayers({
     };
   }, [mapLoaded, mapRef, onSelectItem]);
 
-  // ── Map click while editing → place at click location ──
+  // ── Map click while editing → place at click location (only when NOT in drag mode) ──
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapLoaded || !editingItemId || !onUpdateCoords) return;
+    if (
+      !map ||
+      !mapLoaded ||
+      !editingItemId ||
+      !onUpdateCoords ||
+      dragModeActive
+    )
+      return;
 
     const onClick = (e: maplibregl.MapMouseEvent) => {
       onUpdateCoords(editingItemId, e.lngLat.lng, e.lngLat.lat);
@@ -244,7 +264,7 @@ export function useActivityLayers({
     return () => {
       map.off("click", onClick);
     };
-  }, [mapLoaded, mapRef, editingItemId, onUpdateCoords]);
+  }, [mapLoaded, mapRef, editingItemId, onUpdateCoords, dragModeActive]);
 
   // ── Fly to selected ──
   useEffect(() => {

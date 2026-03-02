@@ -58,8 +58,8 @@ export default function DayDetailsView({
   const [mapSelectedPOI, setMapSelectedPOI] = useState<PlacePointResult | null>(
     null,
   );
-  const [dragFromIdx, setDragFromIdx] = useState<number | null>(null);
-  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const [quickAddPrefill, setQuickAddPrefill] =
+    useState<Partial<ItineraryItem> | null>(null);
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -117,6 +117,7 @@ export default function DayDetailsView({
       .from("itinerary_items")
       .insert(newItem as Omit<ItineraryItem, "id">);
     setAddingItem(false);
+    setQuickAddPrefill(null);
     refetch();
   };
 
@@ -137,57 +138,6 @@ export default function DayDetailsView({
     refetch();
   };
 
-  const handleReorder = async (fromIndex: number, toIndex: number) => {
-    if (fromIndex === toIndex) return;
-    const sorted = [...items].sort((a, b) => a.order_index - b.order_index);
-    if (
-      fromIndex < 0 ||
-      toIndex < 0 ||
-      fromIndex >= sorted.length ||
-      toIndex >= sorted.length
-    )
-      return;
-
-    // Build new order: remove the dragged item, insert at target position
-    const reordered = [...sorted];
-    const [moved] = reordered.splice(fromIndex, 1);
-    reordered.splice(toIndex, 0, moved);
-
-    // Collect the original time slots (keyed by order position)
-    const originalSlots = sorted.map((item) => ({
-      start_time: item.start_time,
-      end_time: item.end_time,
-    }));
-
-    setBusy(true);
-    // Update all items that changed position
-    const updates = reordered
-      .map((item, idx) => {
-        const newOrderIndex = sorted[idx].order_index; // use the original order_index values
-        const slot = originalSlots[idx];
-        if (
-          item.order_index === newOrderIndex &&
-          item.start_time === slot.start_time &&
-          item.end_time === slot.end_time
-        ) {
-          return null; // no change
-        }
-        return supabase
-          .from("itinerary_items")
-          .update({
-            order_index: newOrderIndex,
-            start_time: slot.start_time,
-            end_time: slot.end_time,
-          })
-          .eq("id", item.id);
-      })
-      .filter(Boolean);
-
-    await Promise.all(updates);
-    setBusy(false);
-    refetch();
-  };
-
   // Clear search POIs when editing stops
   const handleCancelEditing = () => {
     setEditingItemId(null);
@@ -201,16 +151,51 @@ export default function DayDetailsView({
     setMapSelectedPOI(null);
   };
 
-  // Quick-add from map POI click
-  const handleQuickAddActivity = async (data: Partial<ItineraryItem>) => {
-    const supabase = createClient();
-    await supabase
-      .from("itinerary_items")
-      .insert({ ...data, itinerary_day_id: day.id } as Omit<
-        ItineraryItem,
-        "id"
-      >);
+  const handleCancelQuickAdd = () => {
+    setQuickAddPrefill(null);
+    setSearchPOIs([]);
+    setMapSelectedPOI(null);
+  };
+
+  // Reorder from map widget — ordered array of IDs; time slots follow position
+  const handleSaveReorder = async (orderedIds: string[]) => {
+    const sorted = [...items].sort((a, b) => a.order_index - b.order_index);
+    const originalSlots = sorted.map((item) => ({
+      start_time: item.start_time,
+      end_time: item.end_time,
+    }));
+    const itemById = new Map(items.map((i) => [i.id, i]));
+    setBusy(true);
+    const updates = orderedIds
+      .map((id, newIdx) => {
+        const item = itemById.get(id)!;
+        const newOrderIndex = sorted[newIdx].order_index;
+        const slot = originalSlots[newIdx];
+        if (
+          item.order_index === newOrderIndex &&
+          item.start_time === slot.start_time &&
+          item.end_time === slot.end_time
+        )
+          return null;
+        return supabase
+          .from("itinerary_items")
+          .update({
+            order_index: newOrderIndex,
+            start_time: slot.start_time,
+            end_time: slot.end_time,
+          })
+          .eq("id", id);
+      })
+      .filter(Boolean);
+    await Promise.all(updates);
+    setBusy(false);
     refetch();
+  };
+
+  // Quick-add from map POI click — open ActivityEditor pre-filled instead of inserting immediately
+  const handleQuickAddActivity = (data: Partial<ItineraryItem>) => {
+    setEditingItemId(null); // close any open edit panel
+    setQuickAddPrefill(data);
   };
 
   // Parse rep_point for display
@@ -246,6 +231,8 @@ export default function DayDetailsView({
           }
           routes={routes}
           onQuickAddActivity={handleQuickAddActivity}
+          onUpdateRouteTransportTypes={handleUpdateRouteTransportTypes}
+          onSaveReorder={handleSaveReorder}
           isApproved={isApproved}
         />
       </div>
@@ -503,21 +490,6 @@ export default function DayDetailsView({
                 }
                 onSaveNew={handleAddItem}
                 onCancelNew={handleCancelAdding}
-                onDragStart={setDragFromIdx}
-                onDragOver={setDragOverIdx}
-                onDragEnd={() => {
-                  if (
-                    dragFromIdx != null &&
-                    dragOverIdx != null &&
-                    dragFromIdx !== dragOverIdx
-                  ) {
-                    handleReorder(dragFromIdx, dragOverIdx);
-                  }
-                  setDragFromIdx(null);
-                  setDragOverIdx(null);
-                }}
-                dragFromIdx={dragFromIdx}
-                dragOverIdx={dragOverIdx}
               />
             </div>
           </div>
@@ -583,6 +555,55 @@ export default function DayDetailsView({
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Right add panel (POI quick-add) ───────────────────── */}
+      {quickAddPrefill && !editingItemId && (
+        <div className="absolute right-0 top-0 bottom-0 z-20 w-1/3 md:w-1/4 bg-white shadow-2xl flex flex-col overflow-hidden border-l border-gray-200">
+          {/* Panel header */}
+          <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Add Activity
+              </p>
+              <p className="text-sm font-bold text-gray-900 leading-tight truncate max-w-55">
+                {(quickAddPrefill.title as string | undefined) ||
+                  "New Activity"}
+              </p>
+            </div>
+            <button
+              onClick={handleCancelQuickAdd}
+              className="w-7 h-7 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-700 transition"
+            >
+              <CloseIcon style={{ fontSize: 16 }} />
+            </button>
+          </div>
+
+          {/* Editor */}
+          <div className="flex-1 overflow-y-auto p-4">
+            <ActivityEditor
+              key={`quick-add-${quickAddPrefill.place_source_id ?? "new"}`}
+              prefill={{
+                ...quickAddPrefill,
+                itinerary_day_id: day.id,
+              }}
+              dayId={day.id}
+              nextIndex={
+                (quickAddPrefill.order_index as number | undefined) ??
+                (items.length > 0
+                  ? Math.max(...items.map((i) => i.order_index)) + 1
+                  : 1)
+              }
+              onSave={handleAddItem}
+              onCancel={handleCancelQuickAdd}
+              mapCenter={repPointParsed ?? undefined}
+              onSearchResultsChange={setSearchPOIs}
+              onHoverSearchResult={setHoveredSearchPOIId}
+              mapSelectedPOI={mapSelectedPOI}
+              onMapPOIConsumed={() => setMapSelectedPOI(null)}
+            />
           </div>
         </div>
       )}

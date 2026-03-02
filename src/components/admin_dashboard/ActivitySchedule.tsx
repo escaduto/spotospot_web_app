@@ -37,7 +37,6 @@ import PhoneIcon from "@mui/icons-material/Phone";
 import LinkIcon from "@mui/icons-material/Link";
 import TaskAltIcon from "@mui/icons-material/TaskAlt";
 import LocationOnIcon from "@mui/icons-material/LocationOn";
-import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 
 // -------------------------------------------------
 // Helpers
@@ -218,12 +217,6 @@ interface ActivityScheduleProps {
   nextIndex: number;
   onSaveNew: (item: Partial<ItineraryItem>) => Promise<void>;
   onCancelNew: () => void;
-  // Drag-reorder
-  onDragStart: (idx: number) => void;
-  onDragOver: (idx: number) => void;
-  onDragEnd: () => void;
-  dragFromIdx: number | null;
-  dragOverIdx: number | null;
 }
 
 // -------------------------------------------------
@@ -234,10 +227,12 @@ function RouteConnector({
   route,
   isEditable,
   onUpdate,
+  onStartEdit,
 }: {
   route: itinerary_item_routes;
   isEditable?: boolean;
   onUpdate?: (routeId: string, types: string[]) => void;
+  onStartEdit?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(
@@ -271,7 +266,14 @@ function RouteConnector({
       {/* Connector summary row */}
       <div
         className={`flex items-center gap-1.5 py-1.5 px-3 ${isEditable ? "cursor-pointer hover:bg-gray-50 rounded-lg" : ""}`}
-        onClick={() => isEditable && setEditing((e) => !e)}
+        onClick={() => {
+          if (isEditable) {
+            if (!editing) {
+              onStartEdit?.(); // update selected activity before opening
+            }
+            setEditing((e) => !e);
+          }
+        }}
       >
         <div className="flex flex-col items-center w-7 shrink-0">
           <div className="w-px flex-1 bg-gray-200" style={{ minHeight: 14 }} />
@@ -375,11 +377,6 @@ interface ActivityBlockProps {
   disabled: boolean;
   onSelect: () => void;
   onEdit: () => void;
-  onDragStart: () => void;
-  onDragOver: () => void;
-  onDragEnd: () => void;
-  isDragOver: boolean;
-  isDragging: boolean;
 }
 
 function ActivityBlock({
@@ -390,11 +387,6 @@ function ActivityBlock({
   disabled,
   onSelect,
   onEdit,
-  onDragStart,
-  onDragOver,
-  onDragEnd,
-  isDragOver,
-  isDragging,
 }: ActivityBlockProps) {
   const cfg = getTypeConfig(item.item_type ?? "other");
   const timeLabel = item.start_time ? fmt12(item.start_time) : null;
@@ -406,26 +398,7 @@ function ActivityBlock({
   );
 
   return (
-    <div
-      draggable={!disabled}
-      onDragStart={(e) => {
-        e.dataTransfer.effectAllowed = "move";
-        onDragStart();
-      }}
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        onDragOver();
-      }}
-      onDragEnd={onDragEnd}
-      className={`flex gap-0 transition-all group ${
-        isDragging
-          ? "opacity-40"
-          : isDragOver
-            ? "border-t-2 border-blue-400"
-            : ""
-      }`}
-    >
+    <div className="flex gap-0 transition-all group">
       {/* Left time column */}
       <div className="w-12 shrink-0 flex flex-col items-end pr-2 pt-2.5">
         {timeLabel ? (
@@ -651,13 +624,6 @@ function ActivityBlock({
             <EditIcon style={{ color: "#616161", fontSize: 16 }} />
           </button>
         )}
-
-        {/* Drag handle */}
-        {!disabled && (
-          <div className="self-center px-1 text-gray-200 hover:text-gray-400 cursor-grab active:cursor-grabbing">
-            <DragIndicatorIcon style={{ fontSize: 16 }} />
-          </div>
-        )}
       </div>
     </div>
   );
@@ -690,11 +656,6 @@ export default function ActivitySchedule({
   nextIndex,
   onSaveNew,
   onCancelNew,
-  onDragStart,
-  onDragOver,
-  onDragEnd,
-  dragFromIdx,
-  dragOverIdx,
 }: ActivityScheduleProps) {
   // These are still passed through to ActivityEditor for "new" items;
   // for existing items, the parent modal handles save/delete
@@ -741,11 +702,6 @@ export default function ActivitySchedule({
                 onEdit(item.id);
               }
             }}
-            onDragStart={() => onDragStart(idx)}
-            onDragOver={() => onDragOver(idx)}
-            onDragEnd={onDragEnd}
-            isDragOver={dragOverIdx === idx && dragFromIdx !== idx}
-            isDragging={dragFromIdx === idx}
           />,
         );
 
@@ -758,6 +714,7 @@ export default function ActivitySchedule({
               route={route}
               isEditable={!isApproved && !busy}
               onUpdate={onUpdateTransportTypes}
+              onStartEdit={() => onSelect(route.from_item_id ?? null)}
             />,
           );
         }
