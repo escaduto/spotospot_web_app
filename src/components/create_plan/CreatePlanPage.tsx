@@ -12,8 +12,11 @@ import {
 } from "@/src/supabase/places";
 import { GLOBAL_PMTILES_URL } from "@/src/constants/paths";
 import { defaultMapStyleJSON } from "@/src/map/styles/default";
+import { Category_Types } from "@/src/types/itinerary";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { CategoryPillSelector } from "./CategoryPillSelector";
+import { CreatePlanMapOverlay } from "./CreatePlanMapOverlay";
 
 // MUI
 import Autocomplete from "@mui/material/Autocomplete";
@@ -29,6 +32,7 @@ import PlaceIcon from "@mui/icons-material/Place";
 import AddIcon from "@mui/icons-material/Add";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import CategoryIcon from "@mui/icons-material/Category";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -47,6 +51,7 @@ interface TopDestSearchResult {
   destination_value: string;
   rep_point: string | null;
   image_url: string | null;
+  bbox: number[] | null; // [minLng, minLat, maxLng, maxLat]
 }
 
 interface Locality {
@@ -63,6 +68,11 @@ interface Locality {
   id: string; // filled from place_source_id after fetch
   name: string; // filled from name_en ?? name_default after fetch
 }
+
+// A locality can be a DB-backed Locality or a free-text string typed by the user.
+type LocalityEntry = Locality | string;
+const getLocalityName = (l: LocalityEntry): string =>
+  typeof l === "string" ? l : l.name;
 
 // ─── GeoJSON helpers ───────────────────────────────────────────────────────────
 
@@ -127,6 +137,11 @@ const LOCALITY_LAYER = "locality-layer";
 const LOCALITY_LABEL_LAYER = "locality-label-layer";
 const PLACES_SRC = "selected-places-src";
 const PLACES_LAYER = "selected-places-layer";
+// Search-POI overlay (for MapSearchBar + MapPOIFilter in the map panel)
+const SEARCH_POIS_SRC = "search-pois";
+const SEARCH_POIS_CIRCLE = "search-pois-circle";
+const SEARCH_POIS_ICONS = "search-pois-icons";
+const SEARCH_POIS_LABELS = "search-pois-label";
 
 // ─── Main component ────────────────────────────────────────────────────────────
 
@@ -154,10 +169,18 @@ export default function CreatePlanPage() {
 
   // ── Step 2: localities ─────────────────────────────────────────────────────
   const [localities, setLocalities] = useState<Locality[]>([]);
-  const [selectedLocalities, setSelectedLocalities] = useState<Locality[]>([]);
+  const [selectedLocalities, setSelectedLocalities] = useState<LocalityEntry[]>(
+    [],
+  );
   const [localityQuery, setLocalityQuery] = useState("");
   const [localityLoading, setLocalityLoading] = useState(false);
+  const [hoveredLocalityId, setHoveredLocalityId] = useState<string | null>(
+    null,
+  );
   const localityDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Step 2b: categories (trip vibe) ───────────────────────────────────────
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
   // ── Step 3: places ─────────────────────────────────────────────────────────
   const [selectedPlaces, setSelectedPlaces] = useState<PlacePointResult[]>([]);
@@ -165,6 +188,18 @@ export default function CreatePlanPage() {
   const [placeResults, setPlaceResults] = useState<PlacePointResult[]>([]);
   const [placeLoading, setPlaceLoading] = useState(false);
   const placeDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Callback ref so CreatePlanMapOverlay can add places without prop-drilling
+  const addPlaceFromMapRef = useRef<((p: PlacePointResult) => void) | null>(
+    null,
+  );
+  useEffect(() => {
+    addPlaceFromMapRef.current = (p: PlacePointResult) => {
+      setSelectedPlaces((prev) =>
+        prev.some((x) => x.id === p.id) ? prev : [...prev, p],
+      );
+    };
+  }, []);
 
   // ── Submit ─────────────────────────────────────────────────────────────────
   const [creating, setCreating] = useState(false);
@@ -227,11 +262,31 @@ export default function CreatePlanPage() {
         type: "circle",
         source: LOCALITY_SRC,
         paint: {
-          "circle-radius": 6,
-          "circle-color": ["case", ["get", "selected"], "#6366f1", "#94a3b8"],
-          "circle-stroke-width": 2,
+          "circle-radius": [
+            "case",
+            ["get", "selected"],
+            8,
+            ["case", ["get", "hovered"], 8, 6],
+          ],
+          "circle-color": [
+            "case",
+            ["get", "selected"],
+            "#6366f1",
+            ["case", ["get", "hovered"], "#a5b4fc", "#94a3b8"],
+          ],
+          "circle-stroke-width": [
+            "case",
+            ["get", "selected"],
+            2.5,
+            ["case", ["get", "hovered"], 2, 1.5],
+          ],
           "circle-stroke-color": "#fff",
-          "circle-opacity": 0.9,
+          "circle-opacity": [
+            "case",
+            ["get", "selected"],
+            1,
+            ["case", ["get", "hovered"], 0.9, 0.65],
+          ],
         },
       });
       map.addLayer({
@@ -277,6 +332,116 @@ export default function CreatePlanPage() {
         "bottom-right",
       );
 
+      // ── Search-POIs overlay source (used by map overlay search / filter) ──
+      map.addSource(SEARCH_POIS_SRC, {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: SEARCH_POIS_CIRCLE,
+        type: "circle",
+        source: SEARCH_POIS_SRC,
+        paint: {
+          "circle-radius": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            10,
+            ["case", ["boolean", ["feature-state", "hover"], false], 8, 4],
+            15,
+            ["case", ["boolean", ["feature-state", "hover"], false], 16, 8],
+          ],
+          "circle-color": ["get", "color"],
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": [
+            "case",
+            ["boolean", ["feature-state", "hover"], false],
+            2,
+            1,
+          ],
+          "circle-opacity": [
+            "case",
+            ["boolean", ["feature-state", "hover"], false],
+            1,
+            0.85,
+          ],
+        },
+      });
+      map.addLayer({
+        id: SEARCH_POIS_ICONS,
+        type: "symbol",
+        source: SEARCH_POIS_SRC,
+        minzoom: 12,
+        layout: {
+          "icon-image": ["get", "icon"],
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 12, 0.3, 15, 0.5],
+          "icon-anchor": "center",
+          "icon-allow-overlap": true,
+        },
+        paint: { "icon-color": "#ffffff" },
+      });
+      map.addLayer({
+        id: SEARCH_POIS_LABELS,
+        type: "symbol",
+        source: SEARCH_POIS_SRC,
+        minzoom: 11,
+        layout: {
+          "text-field": ["get", "name"],
+          "text-size": 10,
+          "text-offset": [0, 1],
+          "text-anchor": "top",
+          "text-allow-overlap": false,
+        },
+        paint: {
+          "text-color": "#1e293b",
+          "text-halo-color": "#fff",
+          "text-halo-width": 1.5,
+        },
+      });
+
+      // Click on search-pois dot → add to selected places
+      map.on("click", SEARCH_POIS_CIRCLE, (e) => {
+        const feat = e.features?.[0];
+        if (!feat) return;
+        const props = feat.properties as Record<string, unknown>;
+        const [lng, lat] = (feat.geometry as GeoJSON.Point).coordinates;
+        const place: PlacePointResult = {
+          id: String(props._placeId ?? props.place_source_id ?? ""),
+          place_source_id: String(
+            props._placeId ?? props.place_source_id ?? "",
+          ),
+          place_table: String(props.place_table ?? "places"),
+          name_default: String(props.name_default ?? props.name ?? ""),
+          name_en: props.name_en != null ? String(props.name_en) : null,
+          category: props.category != null ? String(props.category) : null,
+          categories: null,
+          category_group:
+            props.category_group != null ? String(props.category_group) : null,
+          address: props.address != null ? String(props.address) : null,
+          city: props.city != null ? String(props.city) : null,
+          region: null,
+          country: props.country != null ? String(props.country) : null,
+          postal_code: null,
+          lat,
+          lng,
+          website_url: null,
+          phone_number: null,
+          popularity_score:
+            props.popularity_score != null
+              ? Number(props.popularity_score)
+              : null,
+          is_top_destination: null,
+          metadata: null,
+        };
+        addPlaceFromMapRef.current?.(place);
+      });
+      map.on("mouseenter", SEARCH_POIS_CIRCLE, () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", SEARCH_POIS_CIRCLE, () => {
+        map.getCanvas().style.cursor = "";
+      });
+
       setMapLoaded(true);
       // Trigger resize so MapLibre picks up the correct flex-layout dimensions.
       // requestAnimationFrame alone isn't always sufficient; belt-and-suspenders.
@@ -313,14 +478,14 @@ export default function CreatePlanPage() {
   // ── Place image markers on map when destinations + map are ready ───────────
 
   const handleMarkerClick = useCallback((dest: TopDestination) => {
-    const result: TopDestSearchResult = {
+    setSelectedDest({
       id: dest.id,
       label: dest.label,
       destination_value: dest.destination_value,
       rep_point: dest.rep_point,
       image_url: dest.image_url,
-    };
-    setSelectedDest(result);
+      bbox: dest.bbox,
+    });
     setDestQuery(dest.label);
   }, []);
 
@@ -336,45 +501,50 @@ export default function CreatePlanPage() {
       const coords = parseWKBCoords(dest.rep_point);
       if (!coords) return;
 
-      // Create marker DOM element
-      const el = document.createElement("div");
-      el.className = "dest-marker";
-      el.style.cssText = `
+      // MapLibre sets `transform: translate(x,y)` on the element passed to Marker.
+      // If we also set `transform: scale(...)` on that same element on hover it
+      // overwrites the translate and the marker jumps to the screen origin.
+      // Fix: pass a transparent outer wrapper to Marker so MapLibre controls its
+      // transform, then scale/style the inner visual element independently.
+      const outer = document.createElement("div");
+      outer.style.cssText = `width: 40px; height: 40px; cursor: pointer;`;
+
+      const inner = document.createElement("div");
+      inner.style.cssText = `
         width: 40px;
         height: 40px;
         border-radius: 50%;
         border: 3px solid white;
         box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-        cursor: pointer;
         background-size: cover;
         background-position: center;
         background-color: #e2e8f0;
-        transition: transform 0.15s, box-shadow 0.15s;
+        transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
         overflow: hidden;
+        pointer-events: none;
       `;
       if (dest.image_url) {
-        el.style.backgroundImage = `url('${dest.image_url}')`;
+        inner.style.backgroundImage = `url('${dest.image_url}')`;
       } else {
-        el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:18px">📍</div>`;
+        inner.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:18px">📍</div>`;
       }
+      outer.appendChild(inner);
 
-      el.addEventListener("mouseenter", () => {
-        el.style.transform = "scale(1.2)";
-        el.style.boxShadow = "0 4px 16px rgba(0,0,0,0.4)";
-        el.style.zIndex = "10";
-      });
-      el.addEventListener("mouseleave", () => {
-        const isSelected =
-          destMarkersRef.current.get(dest.destination_value) &&
-          el.dataset.selected === "true";
-        if (!isSelected) {
-          el.style.transform = "scale(1)";
-          el.style.boxShadow = "0 2px 8px rgba(0,0,0,0.3)";
+      outer.addEventListener("mouseenter", () => {
+        if (inner.dataset.selected !== "true") {
+          inner.style.transform = "scale(1.2)";
+          inner.style.boxShadow = "0 4px 16px rgba(0,0,0,0.4)";
         }
       });
-      el.addEventListener("click", () => handleMarkerClick(dest));
+      outer.addEventListener("mouseleave", () => {
+        if (inner.dataset.selected !== "true") {
+          inner.style.transform = "";
+          inner.style.boxShadow = "0 2px 8px rgba(0,0,0,0.3)";
+        }
+      });
+      outer.addEventListener("click", () => handleMarkerClick(dest));
 
-      // Tooltip popup
+      // Tooltip popup — attach to the outer so it fires correctly
       const popup = new maplibregl.Popup({
         offset: 24,
         closeButton: false,
@@ -382,33 +552,38 @@ export default function CreatePlanPage() {
       }).setHTML(
         `<div style="font-size:12px;font-weight:600;padding:2px 4px">${dest.label}</div>`,
       );
-
-      const marker = new maplibregl.Marker({ element: el, anchor: "center" })
-        .setLngLat([coords.lng, coords.lat])
-        .addTo(map);
-
-      el.addEventListener("mouseenter", () =>
+      outer.addEventListener("mouseenter", () =>
         popup.addTo(map).setLngLat([coords.lng, coords.lat]),
       );
-      el.addEventListener("mouseleave", () => popup.remove());
+      outer.addEventListener("mouseleave", () => popup.remove());
+
+      const marker = new maplibregl.Marker({ element: outer, anchor: "center" })
+        .setLngLat([coords.lng, coords.lat])
+        .addTo(map);
 
       destMarkersRef.current.set(dest.destination_value, marker);
     });
   }, [mapLoaded, topDestinations, handleMarkerClick]);
 
   // ── Update marker "selected" styling ──────────────────────────────────────
+  // marker.getElement() returns the outer wrapper; style the inner visual child.
 
   useEffect(() => {
     destMarkersRef.current.forEach((marker, key) => {
-      const el = marker.getElement();
+      const outer = marker.getElement();
+      const inner = outer.firstElementChild as HTMLElement | null;
+      if (!inner) return;
       const isSelected = selectedDest?.destination_value === key;
-      el.dataset.selected = String(isSelected);
-      el.style.border = isSelected ? "3px solid #0d9488" : "3px solid white";
-      el.style.transform = isSelected ? "scale(1.3)" : "scale(1)";
-      el.style.boxShadow = isSelected
+      inner.dataset.selected = String(isSelected);
+      inner.style.border = isSelected ? "3px solid #0d9488" : "3px solid white";
+      inner.style.transform = isSelected ? "scale(1.15)" : "";
+      inner.style.boxShadow = isSelected
         ? "0 4px 20px rgba(13,148,136,0.5)"
         : "0 2px 8px rgba(0,0,0,0.3)";
-      el.style.zIndex = isSelected ? "20" : "1";
+      // Elevate the MapLibre marker container (parent of outer) for z-ordering
+      const markerContainer = outer.parentElement;
+      if (markerContainer)
+        markerContainer.style.zIndex = isSelected ? "20" : "";
     });
   }, [selectedDest]);
 
@@ -516,7 +691,11 @@ export default function CreatePlanPage() {
       | undefined;
     if (!src) return;
 
-    const selectedIds = new Set(selectedLocalities.map((l) => l.id));
+    const selectedIds = new Set(
+      selectedLocalities
+        .filter((l): l is Locality => typeof l !== "string")
+        .map((l) => l.id),
+    );
     const features: GeoJSON.Feature[] = localities
       .map((loc) => {
         if (!loc.lat || !loc.lng) return null;
@@ -527,13 +706,14 @@ export default function CreatePlanPage() {
             id: loc.id,
             name: loc.name,
             selected: selectedIds.has(loc.id),
+            hovered: loc.id === hoveredLocalityId,
           },
         };
       })
       .filter(Boolean) as GeoJSON.Feature[];
 
     src.setData({ type: "FeatureCollection", features });
-  }, [localities, selectedLocalities, mapLoaded]);
+  }, [localities, selectedLocalities, hoveredLocalityId, mapLoaded]);
 
   // ── Update selected places layer on map ────────────────────────────────────
 
@@ -659,7 +839,7 @@ export default function CreatePlanPage() {
     [selectedDest, supabase],
   );
 
-  // ─── Search: places ─────────────────────────────────────────────────────────
+  // ─── Search: places — scoped to destination bbox, ordered by distance ────────
 
   const handlePlaceQueryChange = useCallback(
     (_: React.SyntheticEvent, value: string) => {
@@ -671,12 +851,32 @@ export default function CreatePlanPage() {
       }
       setPlaceLoading(true);
       placeDebounce.current = setTimeout(async () => {
-        const results = await searchPlaces(value.trim(), 30);
-        setPlaceResults(results);
+        // Pass destination centre as mapCenter so the RPC orders by distance
+        const destCoords = selectedDest
+          ? parseWKBCoords(selectedDest.rep_point)
+          : null;
+        const results = await searchPlaces(
+          value.trim(),
+          40,
+          destCoords ?? undefined,
+        );
+        // Client-side clip to destination bbox when available
+        const bbox = selectedDest?.bbox;
+        const scoped =
+          bbox && bbox.length >= 4
+            ? results.filter(
+                (p) =>
+                  p.lng >= bbox[0] &&
+                  p.lat >= bbox[1] &&
+                  p.lng <= bbox[2] &&
+                  p.lat <= bbox[3],
+              )
+            : results;
+        setPlaceResults(scoped);
         setPlaceLoading(false);
       }, 350);
     },
-    [],
+    [selectedDest],
   );
 
   // ─── Submit ──────────────────────────────────────────────────────────────────
@@ -686,12 +886,15 @@ export default function CreatePlanPage() {
     setCreating(true);
     setCreateError(null);
 
+    const localityNames = selectedLocalities
+      .map(getLocalityName)
+      .filter(Boolean);
+
     const { data, error } = await supabase.rpc("create_plan", {
       destination_value: selectedDest.destination_value,
-      locality_ids:
-        selectedLocalities.length > 0
-          ? selectedLocalities.map((l) => l.id)
-          : undefined,
+      locality_names: localityNames.length > 0 ? localityNames : undefined,
+      categories:
+        selectedCategories.length > 0 ? selectedCategories : undefined,
       place_ids:
         selectedPlaces.length > 0
           ? selectedPlaces.map((p) => p.place_source_id ?? p.id)
@@ -716,7 +919,14 @@ export default function CreatePlanPage() {
     } else {
       router.push("/dashboard");
     }
-  }, [selectedDest, selectedLocalities, selectedPlaces, supabase, router]);
+  }, [
+    selectedDest,
+    selectedLocalities,
+    selectedCategories,
+    selectedPlaces,
+    supabase,
+    router,
+  ]);
 
   // ─── Render ──────────────────────────────────────────────────────────────────
 
@@ -750,23 +960,18 @@ export default function CreatePlanPage() {
 
       {/* ── Main split ── */}
       <div className="flex flex-1 overflow-hidden">
-        {/* LEFT — Map */}
-        <div className="relative flex-1 min-w-0">
-          <div
-            ref={mapContainerRef}
-            className="absolute inset-0 h-full w-full"
-          />
-          {!mapLoaded && (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
-              <div className="flex flex-col items-center gap-3">
-                <span className="text-4xl animate-bounce">🗺️</span>
-                <p className="text-sm text-gray-400 animate-pulse">
-                  Loading map…
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
+        {/* LEFT — Map + POI search overlay */}
+        <CreatePlanMapOverlay
+          mapContainerRef={mapContainerRef}
+          mapRef={mapRef}
+          mapLoaded={mapLoaded}
+          selectedDest={selectedDest}
+          onAddPlace={(p: PlacePointResult) =>
+            setSelectedPlaces((prev) =>
+              prev.some((x) => x.id === p.id) ? prev : [...prev, p],
+            )
+          }
+        />
 
         {/* RIGHT — Form panel */}
         <div className="flex w-100 shrink-0 flex-col overflow-y-auto border-l border-gray-100 bg-white">
@@ -777,8 +982,8 @@ export default function CreatePlanPage() {
                 Create a Day Plan
               </h1>
               <p className="mt-1 text-sm text-gray-400">
-                Pick a destination, select areas, add specific spots, then let
-                AI build your itinerary.
+                Pick a destination, choose your vibe, narrow to areas, add
+                specific spots — then let AI build your itinerary.
               </p>
             </div>
 
@@ -878,14 +1083,50 @@ export default function CreatePlanPage() {
               )}
             </div>
 
-            {/* ── Step 2: Localities ── */}
+            {/* ── Step 2: Trip vibe / categories ── */}
+            {selectedDest && (
+              <>
+                <Divider />
+                <div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-500 text-[10px] font-bold text-white">
+                      2
+                    </span>
+                    <span className="text-sm font-semibold text-gray-700">
+                      Trip vibe
+                    </span>
+                    <span className="text-xs text-gray-400 ml-1">
+                      (optional)
+                    </span>
+                    <CategoryIcon
+                      sx={{ fontSize: 16, color: "#8b5cf6", ml: "auto" }}
+                    />
+                  </div>
+                  <p className="mb-2.5 text-xs text-gray-400">
+                    Tell the AI what kind of trip you want.
+                  </p>
+                  <CategoryPillSelector
+                    selected={selectedCategories}
+                    onChange={setSelectedCategories}
+                  />
+                  {selectedCategories.length > 0 && (
+                    <p className="mt-2 text-xs text-violet-600">
+                      {selectedCategories.length} vibe
+                      {selectedCategories.length !== 1 ? "s" : ""} selected
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* ── Step 3: Localities ── */}
             {selectedDest && (
               <>
                 <Divider />
                 <div>
                   <div className="mb-2 flex items-center gap-2">
                     <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-500 text-[10px] font-bold text-white">
-                      2
+                      3
                     </span>
                     <span className="text-sm font-semibold text-gray-700">
                       Focus areas
@@ -898,41 +1139,59 @@ export default function CreatePlanPage() {
                     />
                   </div>
                   <p className="mb-2 text-xs text-gray-400">
-                    Narrow your plan to specific neighbourhoods or districts
-                    within{" "}
+                    Narrow your plan to specific neighbourhoods within{" "}
                     <strong className="text-gray-600">
                       {selectedDest.label}
                     </strong>
-                    .
+                    . Type any name to add a custom area.
                   </p>
 
-                  <Autocomplete<Locality, true>
+                  <Autocomplete<LocalityEntry, true, false, true>
                     multiple
+                    freeSolo
                     options={localities}
-                    getOptionLabel={(o) => o.name ?? ""}
-                    isOptionEqualToValue={(a, b) => a.id === b.id}
+                    getOptionLabel={(o) =>
+                      typeof o === "string" ? o : (o.name ?? "")
+                    }
+                    isOptionEqualToValue={(a, b) => {
+                      if (typeof a === "string" && typeof b === "string")
+                        return a === b;
+                      if (typeof a !== "string" && typeof b !== "string")
+                        return a.id === b.id;
+                      return false;
+                    }}
                     value={selectedLocalities}
                     inputValue={localityQuery}
                     onInputChange={handleLocalityQueryChange}
                     onChange={(_, v) => setSelectedLocalities(v)}
+                    onHighlightChange={(_, option) => {
+                      setHoveredLocalityId(
+                        option && typeof option !== "string" ? option.id : null,
+                      );
+                    }}
                     loading={localityLoading}
                     filterOptions={(x) => x}
                     size="small"
                     disableCloseOnSelect
                     noOptionsText={
-                      localityLoading ? "Loading…" : "No areas found"
+                      localityLoading
+                        ? "Loading…"
+                        : "No areas found — press Enter to add"
                     }
                     renderTags={(value, getTagProps) =>
                       value.map((option, index) => {
                         const { key, ...tagProps } = getTagProps({ index });
+                        const label =
+                          typeof option === "string" ? option : option.name;
+                        const isManual = typeof option === "string";
                         return (
                           <Chip
                             key={key}
-                            label={option.name}
+                            label={label}
                             size="small"
                             sx={{
-                              bgcolor: "#eef2ff",
-                              color: "#4338ca",
+                              bgcolor: isManual ? "#f0fdf4" : "#eef2ff",
+                              color: isManual ? "#166534" : "#4338ca",
                               fontWeight: 600,
                               fontSize: "0.7rem",
                             }}
@@ -941,11 +1200,35 @@ export default function CreatePlanPage() {
                         );
                       })
                     }
+                    renderOption={(props, option) => {
+                      const name =
+                        typeof option === "string" ? option : option.name;
+                      const id = typeof option === "string" ? null : option.id;
+                      return (
+                        <li
+                          {...props}
+                          key={id ?? name}
+                          onMouseEnter={() => setHoveredLocalityId(id)}
+                          onMouseLeave={() => setHoveredLocalityId(null)}
+                        >
+                          <div className="flex flex-col py-0.5">
+                            <span className="text-sm">{name}</span>
+                            {typeof option !== "string" && option.category && (
+                              <span className="text-xs text-gray-400">
+                                {option.category}
+                              </span>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    }}
                     renderInput={(params) => (
                       <TextField
                         {...params}
                         placeholder={
-                          selectedLocalities.length === 0 ? "Search areas…" : ""
+                          selectedLocalities.length === 0
+                            ? "Search or type an area…"
+                            : ""
                         }
                         variant="outlined"
                         InputProps={{
@@ -973,14 +1256,14 @@ export default function CreatePlanPage() {
               </>
             )}
 
-            {/* ── Step 3: Specific places ── */}
+            {/* ── Step 4: Specific places ── */}
             {selectedDest && (
               <>
                 <Divider />
                 <div>
                   <div className="mb-2 flex items-center gap-2">
                     <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-white">
-                      3
+                      4
                     </span>
                     <span className="text-sm font-semibold text-gray-700">
                       Include specific spots
@@ -993,7 +1276,8 @@ export default function CreatePlanPage() {
                     />
                   </div>
                   <p className="mb-2 text-xs text-gray-400">
-                    Search for specific places you want included in your plan.
+                    Search for specific places, or click any dot on the map to
+                    add it. Results are scoped to your destination.
                   </p>
 
                   <Autocomplete<PlacePointResult, true>
@@ -1092,10 +1376,22 @@ export default function CreatePlanPage() {
                       <LocationOnIcon sx={{ fontSize: 14, color: "#0d9488" }} />
                       {selectedDest.label}
                     </div>
+                    {selectedCategories.length > 0 && (
+                      <div className="flex items-center gap-1.5 text-sm text-gray-500">
+                        <CategoryIcon sx={{ fontSize: 14, color: "#8b5cf6" }} />
+                        {selectedCategories
+                          .map(
+                            (v) =>
+                              Category_Types.find((c) => c.value === v)
+                                ?.label ?? v,
+                          )
+                          .join(", ")}
+                      </div>
+                    )}
                     {selectedLocalities.length > 0 && (
                       <div className="flex items-center gap-1.5 text-sm text-gray-500">
                         <LayersIcon sx={{ fontSize: 14, color: "#6366f1" }} />
-                        {selectedLocalities.map((l) => l.name).join(", ")}
+                        {selectedLocalities.map(getLocalityName).join(", ")}
                       </div>
                     )}
                     {selectedPlaces.length > 0 && (

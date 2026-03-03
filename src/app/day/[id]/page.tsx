@@ -14,7 +14,7 @@ import DayDetailsView from "@/src/components/admin_dashboard/DayDetailsView";
 export default function AdminDayDetailPage() {
   const params = useParams();
   const router = useRouter();
-  // const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const supabase = createClient();
   const dayId = params.id as string;
 
@@ -24,6 +24,7 @@ export default function AdminDayDetailPage() {
   const [routes, setRoutes] = useState<itinerary_item_routes[]>([]);
 
   const fetchData = useCallback(async () => {
+    console.log("Fetching data for day ID:", dayId);
     const [dayRes, itemsRes, routesRes] = await Promise.all([
       supabase
         .from("itinerary_days")
@@ -50,32 +51,32 @@ export default function AdminDayDetailPage() {
   }, [dayId]);
 
   // Redirect once auth resolves; fetch data only when confirmed admin
-  // useEffect(() => {
-  //   if (authLoading) return;
-  //   if (!user) {
-  //     router.replace("/");
-  //     return;
-  //   }
-  //   const role = user.user_metadata?.role ?? user.app_metadata?.role;
-  //   if (role !== "admin") {
-  //     router.replace("/");
-  //     return;
-  //   }
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      router.replace("/");
+      return;
+    }
+    const role = user.user_metadata?.role ?? user.app_metadata?.role;
+    if (role !== "admin") {
+      router.replace("/");
+      return;
+    }
 
-  //   fetchData().finally(() => setDataLoading(false));
-  // }, [authLoading, user, router, fetchData]);
+    fetchData().finally(() => setDataLoading(false));
+  }, [authLoading, user, router, fetchData]);
 
-  // const loading = authLoading || dataLoading;
+  const loading = authLoading || dataLoading;
 
-  // if (loading) {
-  //   return (
-  //     <div className="flex h-screen items-center justify-center">
-  //       <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full" />
-  //     </div>
-  //   );
-  // }
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
 
-  // const role = user?.user_metadata?.role ?? user?.app_metadata?.role;
+  const role = user?.user_metadata?.role ?? user?.app_metadata?.role;
   if (!day) return null;
 
   return (
@@ -83,7 +84,7 @@ export default function AdminDayDetailPage() {
       day={day}
       items={items}
       routes={routes}
-      onBack={() => router.push("/admin")}
+      onBack={() => router.push("/")}
       refetch={fetchData}
     />
   );

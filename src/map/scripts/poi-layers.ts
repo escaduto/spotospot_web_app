@@ -176,7 +176,7 @@ export function buildPOIBaseFilter(): maplibregl.FilterSpecification {
         [
           "all",
           [">=", ["get", "importance_score"], 0.75],
-          [">=", ["zoom"], 13],
+          [">=", ["zoom"], 14],
         ],
         [
           "all",
@@ -188,11 +188,9 @@ export function buildPOIBaseFilter(): maplibregl.FilterSpecification {
           "all",
           ["==", ["get", "category_group"], "tourism_and_attractions"],
           [">=", ["get", "importance_score"], 0.6],
-          [">=", ["zoom"], 14],
+          [">=", ["zoom"], 15],
         ],
-        ["all", [">=", ["get", "importance_score"], 0.7], [">=", ["zoom"], 14]],
-        ["all", [">=", ["get", "importance_score"], 0.6], [">=", ["zoom"], 15]],
-
+        ["all", [">=", ["get", "importance_score"], 0.7], [">=", ["zoom"], 16]],
         ["all", [">=", ["zoom"], 18]],
       ],
     ],
