@@ -11,7 +11,6 @@ import {
   PlacePointResult,
 } from "@/src/supabase/places";
 import { GLOBAL_PMTILES_URL } from "@/src/constants/paths";
-import { defaultMapStyleJSON } from "@/src/map/styles/default";
 import { Category_Types } from "@/src/types/itinerary";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -33,6 +32,8 @@ import AddIcon from "@mui/icons-material/Add";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CategoryIcon from "@mui/icons-material/Category";
+import { globalMinimal } from "@/src/map/styles/global_minmal";
+import { defaultMapStyleJSON } from "@/src/map/styles/default";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -168,7 +169,8 @@ export default function CreatePlanPage() {
   const destDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Step 2: localities ─────────────────────────────────────────────────────
-  const [localities, setLocalities] = useState<Locality[]>([]);
+  // allLocalities = full list fetched once per destination; never re-fetched on query
+  const [allLocalities, setAllLocalities] = useState<Locality[]>([]);
   const [selectedLocalities, setSelectedLocalities] = useState<LocalityEntry[]>(
     [],
   );
@@ -177,7 +179,19 @@ export default function CreatePlanPage() {
   const [hoveredLocalityId, setHoveredLocalityId] = useState<string | null>(
     null,
   );
-  const localityDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Callback ref so map click events can toggle locality selection
+  const toggleLocalityByIdRef = useRef<((id: string) => void) | null>(null);
+  // Client-side filtered view for the autocomplete
+  const filteredLocalities = useMemo(() => {
+    if (!localityQuery.trim()) return allLocalities;
+    const q = localityQuery.toLowerCase();
+    return allLocalities.filter((l) => l.name.toLowerCase().includes(q));
+  }, [allLocalities, localityQuery]);
+  // Top-N by importance score (RPC already returns them sorted) for quick chips
+  const topLocalities = useMemo(
+    () => allLocalities.slice(0, 6),
+    [allLocalities],
+  );
 
   // ── Step 2b: categories (trip vibe) ───────────────────────────────────────
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -218,8 +232,8 @@ export default function CreatePlanPage() {
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
       style: defaultMapStyleJSON,
-      center: [0, 20],
-      zoom: 1.8,
+      center: [-100, 45],
+      zoom: 3,
       attributionControl: false,
       minZoom: 1,
       maxZoom: 18,
@@ -304,6 +318,31 @@ export default function CreatePlanPage() {
           "text-halo-color": "#fff",
           "text-halo-width": 1.5,
         },
+      });
+
+      // Click / hover on locality dots → toggle selection
+      map.on("click", LOCALITY_LAYER, (e) => {
+        const feat = e.features?.[0];
+        if (!feat) return;
+        const id = String(
+          (feat.properties as Record<string, unknown>).id ?? "",
+        );
+        if (!id) return;
+        toggleLocalityByIdRef.current?.(id);
+      });
+      map.on("mouseenter", LOCALITY_LAYER, () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mousemove", LOCALITY_LAYER, (e) => {
+        const feat = e.features?.[0];
+        const id = feat
+          ? String((feat.properties as Record<string, unknown>).id ?? "")
+          : null;
+        setHoveredLocalityId(id || null);
+      });
+      map.on("mouseleave", LOCALITY_LAYER, () => {
+        map.getCanvas().style.cursor = "";
+        setHoveredLocalityId(null);
       });
 
       // Selected places source
@@ -696,7 +735,7 @@ export default function CreatePlanPage() {
         .filter((l): l is Locality => typeof l !== "string")
         .map((l) => l.id),
     );
-    const features: GeoJSON.Feature[] = localities
+    const features: GeoJSON.Feature[] = allLocalities
       .map((loc) => {
         if (!loc.lat || !loc.lng) return null;
         return {
@@ -713,7 +752,7 @@ export default function CreatePlanPage() {
       .filter(Boolean) as GeoJSON.Feature[];
 
     src.setData({ type: "FeatureCollection", features });
-  }, [localities, selectedLocalities, hoveredLocalityId, mapLoaded]);
+  }, [allLocalities, selectedLocalities, hoveredLocalityId, mapLoaded]);
 
   // ── Update selected places layer on map ────────────────────────────────────
 
@@ -759,7 +798,7 @@ export default function CreatePlanPage() {
     (_: React.SyntheticEvent, value: TopDestSearchResult | null) => {
       setSelectedDest(value);
       setSelectedLocalities([]);
-      setLocalities([]);
+      setAllLocalities([]);
       setLocalityQuery("");
       setSelectedPlaces([]);
       setPlaceResults([]);
@@ -777,12 +816,12 @@ export default function CreatePlanPage() {
         });
       }
 
-      // Load all localities for this destination
+      // Load ALL localities once for this destination (client-side filtering after)
       setLocalityLoading(true);
       supabase
         .rpc("search_localities_in_destination", {
           destination_value: value.destination_value,
-          search_query: null, // has_query=false → return all areas by importance
+          search_query: null, // null → return all areas ordered by importance_score
         })
         .then(
           ({
@@ -799,7 +838,7 @@ export default function CreatePlanPage() {
               id: String(r.place_source_id),
               name: (r.name_en ?? r.name_default ?? "") as string,
             })) as Locality[];
-            setLocalities(rows);
+            setAllLocalities(rows);
             setLocalityLoading(false);
           },
         );
@@ -807,37 +846,32 @@ export default function CreatePlanPage() {
     [supabase],
   );
 
-  // ─── Search: localities (debounced filter) ──────────────────────────────────
+  // ─── Search: localities — purely client-side filter over allLocalities ─────────
+  // (no more RPC call on each keystroke; allLocalities loaded once per destination)
 
   const handleLocalityQueryChange = useCallback(
     (_: React.SyntheticEvent, value: string) => {
       setLocalityQuery(value);
-      if (!selectedDest) return;
-      if (localityDebounce.current) clearTimeout(localityDebounce.current);
-      localityDebounce.current = setTimeout(async () => {
-        setLocalityLoading(true);
-        const { data, error } = (await supabase.rpc(
-          "search_localities_in_destination",
-          {
-            destination_value: selectedDest.destination_value,
-            search_query: value.trim().length >= 1 ? value.trim() : null,
-          },
-        )) as {
-          data: Record<string, unknown>[] | null;
-          error: { message: string } | null;
-        };
-        if (error) console.error("search_localities_in_destination:", error);
-        const rows = (data ?? []).map((r) => ({
-          ...r,
-          id: String(r.place_source_id),
-          name: (r.name_en ?? r.name_default ?? "") as string,
-        })) as Locality[];
-        setLocalities(rows);
-        setLocalityLoading(false);
-      }, 300);
     },
-    [selectedDest, supabase],
+    [],
   );
+
+  // ─── Sync toggleLocalityById callback ────────────────────────────────────────
+
+  useEffect(() => {
+    toggleLocalityByIdRef.current = (id: string) => {
+      const loc = allLocalities.find((l) => l.id === id);
+      if (!loc) return;
+      setSelectedLocalities((prev) => {
+        const exists = prev.some(
+          (l): l is Locality => typeof l !== "string" && l.id === id,
+        );
+        if (exists)
+          return prev.filter((l) => typeof l === "string" || l.id !== id);
+        return [...prev, loc];
+      });
+    };
+  }, [allLocalities]);
 
   // ─── Search: places — scoped to destination bbox, ordered by distance ────────
 
@@ -881,50 +915,41 @@ export default function CreatePlanPage() {
 
   // ─── Submit ──────────────────────────────────────────────────────────────────
 
-  const handleCreate = useCallback(async () => {
+  const handleCreate = useCallback(() => {
     if (!selectedDest) return;
     setCreating(true);
-    setCreateError(null);
 
     const localityNames = selectedLocalities
       .map(getLocalityName)
       .filter(Boolean);
 
-    const { data, error } = await supabase.rpc("create_plan", {
-      destination_value: selectedDest.destination_value,
-      locality_names: localityNames.length > 0 ? localityNames : undefined,
-      categories:
-        selectedCategories.length > 0 ? selectedCategories : undefined,
-      place_ids:
-        selectedPlaces.length > 0
-          ? selectedPlaces.map((p) => p.place_source_id ?? p.id)
-          : undefined,
-    });
+    // Persist params so the /creating streaming page can pick them up even
+    // after the Next.js client-side navigation clears component state.
+    sessionStorage.setItem(
+      "__creating_plan",
+      JSON.stringify({
+        destination_value: selectedDest.destination_value,
+        destination_label: selectedDest.label,
+        destination_image_url: selectedDest.image_url ?? null,
+        locality_names: localityNames.length > 0 ? localityNames : undefined,
+        categories:
+          selectedCategories.length > 0 ? selectedCategories : undefined,
+        places:
+          selectedPlaces.length > 0
+            ? selectedPlaces.map((p) => ({
+                id: p.place_source_id ?? p.id,
+                source_table: p.place_table,
+              }))
+            : undefined,
+      }),
+    );
 
-    setCreating(false);
-    if (error) {
-      setCreateError(
-        error.message ?? "Failed to create plan. Please try again.",
-      );
-      return;
-    }
-
-    const row = (Array.isArray(data) ? data[0] : data) as Record<
-      string,
-      unknown
-    > | null;
-    const dayId = row?.itinerary_day_id ?? row?.id ?? null;
-    if (dayId) {
-      router.push(`/day/${dayId}`);
-    } else {
-      router.push("/dashboard");
-    }
+    router.push("/creating");
   }, [
     selectedDest,
     selectedLocalities,
     selectedCategories,
     selectedPlaces,
-    supabase,
     router,
   ]);
 
@@ -960,19 +985,6 @@ export default function CreatePlanPage() {
 
       {/* ── Main split ── */}
       <div className="flex flex-1 overflow-hidden">
-        {/* LEFT — Map + POI search overlay */}
-        <CreatePlanMapOverlay
-          mapContainerRef={mapContainerRef}
-          mapRef={mapRef}
-          mapLoaded={mapLoaded}
-          selectedDest={selectedDest}
-          onAddPlace={(p: PlacePointResult) =>
-            setSelectedPlaces((prev) =>
-              prev.some((x) => x.id === p.id) ? prev : [...prev, p],
-            )
-          }
-        />
-
         {/* RIGHT — Form panel */}
         <div className="flex w-100 shrink-0 flex-col overflow-y-auto border-l border-gray-100 bg-white">
           <div className="flex flex-col gap-6 p-5">
@@ -1149,7 +1161,7 @@ export default function CreatePlanPage() {
                   <Autocomplete<LocalityEntry, true, false, true>
                     multiple
                     freeSolo
-                    options={localities}
+                    options={filteredLocalities}
                     getOptionLabel={(o) =>
                       typeof o === "string" ? o : (o.name ?? "")
                     }
@@ -1245,6 +1257,42 @@ export default function CreatePlanPage() {
                       />
                     )}
                   />
+
+                  {/* Top suggested neighbourhoods as quick-select chips */}
+                  {topLocalities.length > 0 && !localityQuery && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {topLocalities.map((loc) => {
+                        const isSelected = selectedLocalities.some(
+                          (l): l is Locality =>
+                            typeof l !== "string" && l.id === loc.id,
+                        );
+                        return (
+                          <button
+                            key={loc.id}
+                            type="button"
+                            onClick={() =>
+                              setSelectedLocalities((prev) =>
+                                isSelected
+                                  ? prev.filter(
+                                      (l) =>
+                                        typeof l === "string" ||
+                                        l.id !== loc.id,
+                                    )
+                                  : [...prev, loc],
+                              )
+                            }
+                            className={`px-2.5 py-0.5 text-[11px] rounded-full border transition-colors ${
+                              isSelected
+                                ? "bg-indigo-500 border-indigo-500 text-white"
+                                : "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                            }`}
+                          >
+                            {loc.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   {selectedLocalities.length > 0 && (
                     <p className="mt-1.5 text-xs text-indigo-600">
@@ -1449,6 +1497,24 @@ export default function CreatePlanPage() {
             )}
           </div>
         </div>
+
+        {/* LEFT — Map + POI search overlay */}
+        <CreatePlanMapOverlay
+          mapContainerRef={mapContainerRef}
+          mapRef={mapRef}
+          mapLoaded={mapLoaded}
+          selectedDest={selectedDest}
+          onAddPlace={(p: PlacePointResult) =>
+            setSelectedPlaces((prev) =>
+              prev.some((x) => x.id === p.id) ? prev : [...prev, p],
+            )
+          }
+          onSelectDest={(dest) => {
+            setSelectedDest(dest);
+            setDestQuery(dest.label);
+          }}
+          externalPOIs={placeQuery.length >= 2 ? placeResults : []}
+        />
       </div>
     </div>
   );

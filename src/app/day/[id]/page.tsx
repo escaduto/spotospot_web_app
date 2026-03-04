@@ -76,7 +76,6 @@ export default function AdminDayDetailPage() {
     );
   }
 
-  const role = user?.user_metadata?.role ?? user?.app_metadata?.role;
   if (!day) return null;
 
   return (
