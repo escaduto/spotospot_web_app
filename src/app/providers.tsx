@@ -1,6 +1,7 @@
 "use client";
 
 import { AuthProvider } from "@/src/hooks/useAuth";
+import { LocationProvider } from "@/src/store/locationStore";
 import type { ReactNode } from "react";
 
 /**
@@ -8,5 +9,9 @@ import type { ReactNode } from "react";
  * hooks / browser APIs) inside the server-rendered RootLayout.
  */
 export function AuthProviderWrapper({ children }: { children: ReactNode }) {
-  return <AuthProvider>{children}</AuthProvider>;
+  return (
+    <LocationProvider>
+      <AuthProvider>{children}</AuthProvider>
+    </LocationProvider>
+  );
 }

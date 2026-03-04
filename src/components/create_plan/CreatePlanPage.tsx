@@ -32,8 +32,8 @@ import AddIcon from "@mui/icons-material/Add";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CategoryIcon from "@mui/icons-material/Category";
-import { globalMinimal } from "@/src/map/styles/global_minmal";
 import { defaultMapStyleJSON } from "@/src/map/styles/default";
+import { addPOILayers, loadPOIIconsAsync } from "@/src/map/scripts/poi-layers";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -75,64 +75,8 @@ type LocalityEntry = Locality | string;
 const getLocalityName = (l: LocalityEntry): string =>
   typeof l === "string" ? l : l.name;
 
-// ─── GeoJSON helpers ───────────────────────────────────────────────────────────
-
-/** Try to extract a renderable GeoJSON geometry from an RPC row */
-function tryExtractGeoJSON(
-  row: Record<string, unknown>,
-): GeoJSON.Geometry | null {
-  // 1. get_top_destination_detail returns a "geojson" text column (ST_AsGeoJSON)
-  for (const key of ["geojson", "geom_geojson", "geometry_geojson"]) {
-    const v = row[key];
-    if (typeof v === "string" && v.trim().startsWith("{")) {
-      try {
-        return JSON.parse(v) as GeoJSON.Geometry;
-      } catch {
-        /* fall through */
-      }
-    }
-  }
-  // 2. geom as inline object (already parsed by Supabase)
-  if (
-    row.geom &&
-    typeof row.geom === "object" &&
-    (row.geom as Record<string, unknown>).type
-  ) {
-    return row.geom as unknown as GeoJSON.Geometry;
-  }
-  // 3. Fallback: build a bbox rectangle from jsonb bbox
-  const bboxRaw = row.bbox;
-  let bboxArr: number[] | null = null;
-  if (Array.isArray(bboxRaw)) {
-    bboxArr = bboxRaw as number[];
-  } else if (bboxRaw && typeof bboxRaw === "object") {
-    // PostgREST may return jsonb bbox as {xmin,ymin,xmax,ymax}
-    const b = bboxRaw as Record<string, number>;
-    if (b.xmin != null) bboxArr = [b.xmin, b.ymin, b.xmax, b.ymax];
-  }
-  if (bboxArr && bboxArr.length >= 4) {
-    const [w, s, e, n] = bboxArr;
-    return {
-      type: "Polygon",
-      coordinates: [
-        [
-          [w, s],
-          [e, s],
-          [e, n],
-          [w, n],
-          [w, s],
-        ],
-      ],
-    };
-  }
-  return null;
-}
-
 // ─── Map source / layer IDs ────────────────────────────────────────────────────
 
-const DEST_POLYGON_SRC = "dest-polygon-src";
-const DEST_POLYGON_FILL = "dest-polygon-fill";
-const DEST_POLYGON_LINE = "dest-polygon-line";
 const LOCALITY_SRC = "locality-src";
 const LOCALITY_LAYER = "locality-layer";
 const LOCALITY_LABEL_LAYER = "locality-label-layer";
@@ -175,21 +119,16 @@ export default function CreatePlanPage() {
     [],
   );
   const [localityQuery, setLocalityQuery] = useState("");
+  const [localityOpen, setLocalityOpen] = useState(false);
   const [localityLoading, setLocalityLoading] = useState(false);
   const [hoveredLocalityId, setHoveredLocalityId] = useState<string | null>(
     null,
   );
   // Callback ref so map click events can toggle locality selection
   const toggleLocalityByIdRef = useRef<((id: string) => void) | null>(null);
-  // Client-side filtered view for the autocomplete
-  const filteredLocalities = useMemo(() => {
-    if (!localityQuery.trim()) return allLocalities;
-    const q = localityQuery.toLowerCase();
-    return allLocalities.filter((l) => l.name.toLowerCase().includes(q));
-  }, [allLocalities, localityQuery]);
-  // Top-N by importance score (RPC already returns them sorted) for quick chips
+  // Top-N by importance score (RPC already returns them sorted by importance_score desc)
   const topLocalities = useMemo(
-    () => allLocalities.slice(0, 6),
+    () => allLocalities.slice(0, 8),
     [allLocalities],
   );
 
@@ -240,32 +179,7 @@ export default function CreatePlanPage() {
     });
     mapRef.current = map;
 
-    map.on("load", () => {
-      // Destination polygon source (empty initially)
-      map.addSource(DEST_POLYGON_SRC, {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
-      });
-      map.addLayer({
-        id: DEST_POLYGON_FILL,
-        type: "fill",
-        source: DEST_POLYGON_SRC,
-        paint: {
-          "fill-color": "#0d9488",
-          "fill-opacity": 0.15,
-        },
-      });
-      map.addLayer({
-        id: DEST_POLYGON_LINE,
-        type: "line",
-        source: DEST_POLYGON_SRC,
-        paint: {
-          "line-color": "#0d9488",
-          "line-width": 2,
-          "line-opacity": 0.8,
-        },
-      });
-
+    map.on("load", async () => {
       // Locality points source
       map.addSource(LOCALITY_SRC, {
         type: "geojson",
@@ -319,6 +233,11 @@ export default function CreatePlanPage() {
           "text-halo-width": 1.5,
         },
       });
+
+      // Non-blocking: icons load in background from module-level cache;
+      // the map and layers are ready immediately.
+      loadPOIIconsAsync(map);
+      addPOILayers(map);
 
       // Click / hover on locality dots → toggle selection
       map.on("click", LOCALITY_LAYER, (e) => {
@@ -626,99 +545,32 @@ export default function CreatePlanPage() {
     });
   }, [selectedDest]);
 
-  // ── Fetch destination polygon when selected ─────────────────────────────────
+  // ── Fly to destination bounds when selected ────────────────────────────────
+  // Uses the bbox already available on the search result — no polygon RPC needed.
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapLoaded) return;
+    if (!map || !mapLoaded || !selectedDest) return;
 
-    const src = map.getSource(DEST_POLYGON_SRC) as
-      | maplibregl.GeoJSONSource
-      | undefined;
-    if (!src) return;
-
-    if (!selectedDest) {
-      src.setData({ type: "FeatureCollection", features: [] });
-      return;
+    const bbox = selectedDest.bbox;
+    if (bbox && bbox.length >= 4) {
+      map.fitBounds(
+        [
+          [bbox[0], bbox[1]],
+          [bbox[2], bbox[3]],
+        ],
+        { padding: 60, maxZoom: 12, duration: 1200 },
+      );
+    } else {
+      const coords = parseWKBCoords(selectedDest.rep_point);
+      if (coords)
+        map.flyTo({
+          center: [coords.lng, coords.lat],
+          zoom: 10,
+          duration: 1200,
+        });
     }
-
-    (async () => {
-      const { data, error } = await supabase.rpc("get_top_destination_detail", {
-        destination_value: selectedDest.destination_value,
-      });
-      if (error) {
-        console.error("get_top_destination_detail:", error);
-        // Try to fly using rep_point only
-        const coords = parseWKBCoords(selectedDest.rep_point);
-        if (coords)
-          map.flyTo({
-            center: [coords.lng, coords.lat],
-            zoom: 10,
-            duration: 1200,
-          });
-        src.setData({ type: "FeatureCollection", features: [] });
-        return;
-      }
-
-      const row = (Array.isArray(data) ? data[0] : data) as Record<
-        string,
-        unknown
-      > | null;
-      if (!row) {
-        src.setData({ type: "FeatureCollection", features: [] });
-        return;
-      }
-
-      const geom = tryExtractGeoJSON(row);
-      if (geom) {
-        const feature: GeoJSON.Feature = {
-          type: "Feature",
-          geometry: geom,
-          properties: {},
-        };
-        src.setData({ type: "FeatureCollection", features: [feature] });
-
-        // Fly to bounds of geometry
-        try {
-          const bounds = new maplibregl.LngLatBounds();
-          const addCoords = (coords: number[][] | number[][][]) => {
-            const flat = coords.flat(3) as number[];
-            for (let i = 0; i < flat.length; i += 2) {
-              bounds.extend([flat[i], flat[i + 1]]);
-            }
-          };
-          if (geom.type === "Polygon")
-            addCoords(geom.coordinates as number[][][]);
-          else if (geom.type === "MultiPolygon")
-            (geom.coordinates as number[][][][]).forEach((poly) =>
-              addCoords(poly as number[][][]),
-            );
-          if (!bounds.isEmpty()) {
-            map.fitBounds(bounds, { padding: 60, maxZoom: 12, duration: 1200 });
-          }
-        } catch {
-          // If bounds calculation fails, just fly to rep_point
-          const coords = parseWKBCoords(selectedDest.rep_point);
-          if (coords)
-            map.flyTo({
-              center: [coords.lng, coords.lat],
-              zoom: 10,
-              duration: 1200,
-            });
-        }
-      } else {
-        // No geometry — use rep_point
-        const coords = parseWKBCoords(selectedDest.rep_point);
-        if (coords)
-          map.flyTo({
-            center: [coords.lng, coords.lat],
-            zoom: 10,
-            duration: 1200,
-          });
-        src.setData({ type: "FeatureCollection", features: [] });
-      }
-    })();
-  }, [selectedDest, mapLoaded, supabase]);
+  }, [selectedDest, mapLoaded]);
 
   // ── Update locality layer on map ───────────────────────────────────────────
 
@@ -1161,7 +1013,10 @@ export default function CreatePlanPage() {
                   <Autocomplete<LocalityEntry, true, false, true>
                     multiple
                     freeSolo
-                    options={filteredLocalities}
+                    open={localityOpen}
+                    onOpen={() => setLocalityOpen(true)}
+                    onClose={() => setLocalityOpen(false)}
+                    options={allLocalities}
                     getOptionLabel={(o) =>
                       typeof o === "string" ? o : (o.name ?? "")
                     }
@@ -1171,6 +1026,14 @@ export default function CreatePlanPage() {
                       if (typeof a !== "string" && typeof b !== "string")
                         return a.id === b.id;
                       return false;
+                    }}
+                    filterOptions={(options, state) => {
+                      const q = state.inputValue.trim().toLowerCase();
+                      if (!q) return options;
+                      return options.filter((o) => {
+                        const name = typeof o === "string" ? o : o.name;
+                        return name.toLowerCase().includes(q);
+                      });
                     }}
                     value={selectedLocalities}
                     inputValue={localityQuery}
@@ -1182,13 +1045,14 @@ export default function CreatePlanPage() {
                       );
                     }}
                     loading={localityLoading}
-                    filterOptions={(x) => x}
                     size="small"
                     disableCloseOnSelect
                     noOptionsText={
                       localityLoading
                         ? "Loading…"
-                        : "No areas found — press Enter to add"
+                        : localityQuery
+                          ? "No areas found — press Enter to add"
+                          : "Type to search areas"
                     }
                     renderTags={(value, getTagProps) =>
                       value.map((option, index) => {

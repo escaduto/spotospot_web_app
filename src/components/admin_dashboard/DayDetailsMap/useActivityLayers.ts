@@ -278,7 +278,7 @@ export function useActivityLayers({
 
     map.flyTo({
       center: [coords.lng, coords.lat],
-      zoom: Math.max(map.getZoom(), 13),
+      zoom: Math.max(map.getZoom(), 16),
       duration: 800,
     });
   }, [selectedItemId, items, mapLoaded, mapRef]);

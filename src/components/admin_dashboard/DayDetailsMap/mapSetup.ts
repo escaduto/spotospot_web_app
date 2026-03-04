@@ -26,7 +26,6 @@ function setUpMapLayers(map: maplibregl.Map) {
   });
 
   addPOILayers(map);
-
   // ── Routes source (lines rendered below points) ──
   map.addSource("routes", {
     type: "geojson",

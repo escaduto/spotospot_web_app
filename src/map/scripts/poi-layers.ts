@@ -107,25 +107,77 @@ function buildCategoryColorExpr(): maplibregl.ExpressionSpecification {
 }
 
 // -------------------------------------------------
-// Icon loading
+// Icon loading  (module-level cache shared across map instances)
 // -------------------------------------------------
 
-/** Load all category PNG icons onto the map (awaitable). */
+/**
+ * Module-level cache: icon name → decoded ImageBitmap.
+ * Once an icon is loaded for the first time it is reused by every subsequent
+ * map instance without hitting the network or re-decoding the image.
+ */
+const _iconImageCache = new Map<string, ImageBitmap>();
+
+/**
+ * In-flight load promises — deduplicate concurrent loads for the same icon
+ * when multiple map instances call loadPOIIcons at the same time.
+ */
+const _iconLoadPromises = new Map<string, Promise<ImageBitmap | null>>();
+
+/**
+ * Load all category PNG icons onto the map.
+ * - Icons that are already decoded are added from the in-memory cache instantly.
+ * - Icons not yet fetched are loaded via `fetch` + `createImageBitmap`, which
+ *   respects the browser's HTTP cache on subsequent page loads.
+ * - Concurrent calls for the same icon are deduplicated via `_iconLoadPromises`.
+ *
+ * Awaitable (resolves when all icons are added to this map instance).
+ * For fire-and-forget use, call `loadPOIIconsAsync()` instead.
+ */
 export async function loadPOIIcons(map: maplibregl.Map): Promise<void> {
   // "marker" is the fallback icon for unknown categories — must always be loaded.
   const iconsToLoad = [...new Set([...poiCategoryList, "marker"])];
   const promises = iconsToLoad.map(async (icon) => {
     if (map.hasImage(icon)) return;
-    try {
-      const img = await map.loadImage(`/icons/${icon}.png`);
-      if (!map.hasImage(icon)) {
-        map.addImage(icon, img.data);
-      }
-    } catch (err) {
-      console.warn(`Failed to load POI icon: ${icon}`, err);
+
+    // Serve from in-memory cache (zero network / decode cost).
+    if (_iconImageCache.has(icon)) {
+      map.addImage(icon, _iconImageCache.get(icon)!);
+      return;
     }
+
+    // Kick off load (deduplicated across concurrent callers).
+    if (!_iconLoadPromises.has(icon)) {
+      _iconLoadPromises.set(
+        icon,
+        fetch(`/icons/${icon}.png`)
+          .then((r) => r.blob())
+          .then((b) => createImageBitmap(b))
+          .then((bmp) => {
+            _iconImageCache.set(icon, bmp);
+            return bmp;
+          })
+          .catch((err) => {
+            console.warn(`Failed to load POI icon: ${icon}`, err);
+            return null;
+          }),
+      );
+    }
+
+    const img = await _iconLoadPromises.get(icon)!;
+    if (img && !map.hasImage(icon)) map.addImage(icon, img);
   });
   await Promise.all(promises);
+}
+
+/**
+ * Non-blocking fire-and-forget variant of `loadPOIIcons`.
+ * Cached icons are added synchronously before this function returns;
+ * uncached icons are fetched and added in the background.
+ * The map will display correctly before all icons are ready — MapLibre
+ * adds each icon as it resolves and re-renders symbol layers accordingly.
+ */
+export function loadPOIIconsAsync(map: maplibregl.Map): void {
+  void loadPOIIcons(map);
 }
 
 // -------------------------------------------------
