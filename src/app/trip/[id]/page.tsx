@@ -12,15 +12,17 @@ import type {
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
+import AddDayModal from "@/src/components/trip/AddDayModal";
+
+const TripMiniMap = dynamic(() => import("@/src/components/trip/TripMiniMap"), { ssr: false });
 
 // MUI icons
 import CalendarTodayIcon from "@mui/icons-material/CalendarToday";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
-import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import LinkIcon from "@mui/icons-material/Link";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
-import PeopleIcon from "@mui/icons-material/People";
 import MapIcon from "@mui/icons-material/Map";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import EditIcon from "@mui/icons-material/Edit";
@@ -29,6 +31,9 @@ import CloseIcon from "@mui/icons-material/Close";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import CircularProgress from "@mui/material/CircularProgress";
+import LocationOnIcon from "@mui/icons-material/LocationOn";
+import PeopleIcon from "@mui/icons-material/People";
+import DescriptionIcon from "@mui/icons-material/Description";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -154,9 +159,20 @@ export default function TripPage({
   const [documents, setDocuments] = useState<TripDocuments[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<
-    "days" | "collaborators" | "documents"
-  >("days");
+  const [scrollY, setScrollY] = useState(0);
+  const [addDayOpen, setAddDayOpen] = useState(false);
+
+  // Section refs for anchor scroll
+  const daysRef = useRef<HTMLElement>(null);
+  const travellersRef = useRef<HTMLElement>(null);
+  const docsRef = useRef<HTMLElement>(null);
+  const mapRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const onScroll = () => setScrollY(window.scrollY);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   // ── Fetch everything ───────────────────────────────────────────────────────
 
@@ -345,20 +361,17 @@ export default function TripPage({
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
-        <CircularProgress />
+      <div className="flex h-screen items-center justify-center bg-gray-950">
+        <CircularProgress style={{ color: "#0d9488" }} />
       </div>
     );
   }
 
   if (!trip) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-gray-50 text-gray-600">
-        <p className="text-lg font-semibold">Trip not found.</p>
-        <button
-          onClick={() => router.back()}
-          className="text-sm text-indigo-600 hover:underline"
-        >
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-gray-950 text-gray-400">
+        <p className="text-lg font-semibold text-white">Trip not found.</p>
+        <button onClick={() => router.back()} className="text-sm text-teal-400 hover:underline">
           Go back
         </button>
       </div>
@@ -366,496 +379,433 @@ export default function TripPage({
   }
 
   const isOwner = trip.owner_id === currentUserId;
+  const heroBlur = Math.min(scrollY / 60, 10);
+  const heroScale = 1 + scrollY * 0.0003;
+  const showNav = scrollY > 320;
+
+  const scrollTo = (ref: React.RefObject<HTMLElement | null>) =>
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* ── Hero header ──────────────────────────────────────────────────── */}
-      <div className="relative h-60 w-full bg-gray-300 overflow-hidden">
-        {trip.image_url && (
-          <Image
-            src={trip.image_url}
-            alt={trip.title}
-            fill
-            className="object-cover"
-          />
-        )}
-        <div className="absolute inset-0 bg-linear-to-t from-black/70 via-black/30 to-transparent" />
+    <div className="min-h-screen bg-gray-950 text-white">
 
-        {/* Back */}
+      {/* ── Hero ──────────────────────────────────────────────────────────── */}
+      <div className="relative h-[75vh] w-full overflow-hidden bg-gray-900">
+        {/* Blurring / parallax image */}
+        {trip.image_url && (
+          <div
+            className="absolute -inset-2"
+            style={{
+              transform: `scale(${heroScale})`,
+              filter: `blur(${heroBlur}px)`,
+              transition: "filter 0.05s linear",
+            }}
+          >
+            <Image
+              src={trip.image_url}
+              alt={trip.title}
+              fill
+              className="object-cover"
+              priority
+              placeholder={trip.image_blurhash ? "blur" : undefined}
+              blurDataURL={
+                trip.image_blurhash
+                  ? `data:image/jpeg;base64,${trip.image_blurhash}`
+                  : undefined
+              }
+            />
+          </div>
+        )}
+        {/* Gradient overlay */}
+        <div className="absolute inset-0 bg-linear-to-t from-gray-950 via-gray-950/50 to-transparent" />
+        <div className="absolute inset-0 bg-linear-to-r from-gray-950/40 via-transparent to-transparent" />
+
+        {/* Back button */}
         <button
           onClick={() => router.back()}
-          className="absolute top-4 left-4 flex items-center gap-1 text-white/90 hover:text-white text-sm font-medium"
+          className="absolute top-5 left-5 flex items-center gap-1.5 text-white/80 hover:text-white text-sm font-medium bg-black/20 backdrop-blur-sm px-3 py-1.5 rounded-full transition"
         >
-          <ArrowBackIcon style={{ fontSize: 16 }} />
+          <ArrowBackIcon style={{ fontSize: 15 }} />
           Back
         </button>
 
-        {/* Trip title + description over image */}
-        <div className="absolute bottom-4 left-4 right-4">
-          <h1 className="text-white font-bold text-xl leading-tight">
+        {/* Hero content */}
+        <div className="absolute bottom-0 left-0 right-0 px-6 pb-12 max-w-5xl">
+          {/* Status + visibility badges */}
+          <div className="flex items-center gap-2 mb-3">
+            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+              trip.status === "active" ? "bg-green-500/20 text-green-300 border border-green-500/30"
+              : trip.status === "planning" ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+              : trip.status === "completed" ? "bg-sky-500/20 text-sky-300 border border-sky-500/30"
+              : "bg-gray-500/20 text-gray-400 border border-gray-500/30"
+            }`}>
+              {trip.status.charAt(0).toUpperCase() + trip.status.slice(1)}
+            </span>
+            <span className="text-[11px] text-white/40 border border-white/10 px-2 py-0.5 rounded-full">
+              {trip.visibility}
+            </span>
+          </div>
+
+          {/* Title */}
+          <h1 className="text-3xl sm:text-5xl font-extrabold text-white leading-tight mb-2">
             {isOwner ? (
-              <InlineEdit
-                value={trip.title}
-                onSave={(v) => saveField("title", v)}
-                label="title"
-                className="text-white"
-              />
-            ) : (
-              trip.title
-            )}
+              <InlineEdit value={trip.title} onSave={(v) => saveField("title", v)} label="title" className="text-white" />
+            ) : (trip.title)}
           </h1>
-          {(trip.destination || isOwner) && (
-            <p className="text-white/70 text-sm mt-0.5">
-              {isOwner ? (
-                <InlineEdit
-                  value={trip.destination}
-                  onSave={(v) => saveField("destination", v)}
-                  label="destination"
-                  className="text-white/70"
-                />
-              ) : (
-                trip.destination
-              )}
-            </p>
-          )}
-        </div>
-      </div>
 
-      {/* ── Meta row ─────────────────────────────────────────────────────── */}
-      <div className="max-w-4xl mx-auto px-4 py-4 flex flex-wrap items-center gap-4 border-b border-gray-200 bg-white shadow-sm">
-        {/* Dates */}
-        <div className="flex items-center gap-2 text-sm text-gray-600">
-          <CalendarTodayIcon style={{ fontSize: 15 }} />
-          {editingDates ? (
-            <span className="flex items-center gap-2">
-              <input
-                type="date"
-                value={draftStart}
-                onChange={(e) => setDraftStart(e.target.value)}
-                className="border border-gray-300 rounded px-2 py-0.5 text-sm focus:outline-none focus:border-indigo-400"
-              />
-              <span className="text-gray-400">→</span>
-              <input
-                type="date"
-                value={draftEnd}
-                onChange={(e) => setDraftEnd(e.target.value)}
-                className="border border-gray-300 rounded px-2 py-0.5 text-sm focus:outline-none focus:border-indigo-400"
-              />
-              <button
-                onClick={saveDates}
-                disabled={datesSaving}
-                className="text-green-600 hover:text-green-800 disabled:opacity-40"
-              >
-                {datesSaving ? (
-                  <CircularProgress size={13} />
-                ) : (
-                  <CheckIcon style={{ fontSize: 16 }} />
-                )}
-              </button>
-              <button
-                onClick={() => setEditingDates(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <CloseIcon style={{ fontSize: 16 }} />
-              </button>
-            </span>
-          ) : (
-            <span
-              className="flex items-center gap-1 cursor-pointer hover:text-indigo-600 transition group"
-              onClick={isOwner ? openDateEdit : undefined}
-            >
-              {trip.start_date || trip.end_date ? (
-                <>
-                  {formatDate(trip.start_date)}
-                  {trip.end_date && ` → ${formatDate(trip.end_date)}`}
-                </>
-              ) : (
-                <span className="text-gray-400 italic">Add dates</span>
-              )}
-              {isOwner && (
-                <EditIcon
-                  style={{ fontSize: 12 }}
-                  className="opacity-0 group-hover:opacity-60 transition"
-                />
-              )}
-            </span>
-          )}
-        </div>
-
-        {/* Status badge */}
-        <span
-          className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-            trip.status === "active"
-              ? "bg-green-100 text-green-700"
-              : trip.status === "planning"
-                ? "bg-amber-100 text-amber-700"
-                : trip.status === "completed"
-                  ? "bg-blue-100 text-blue-700"
-                  : "bg-gray-100 text-gray-500"
-          }`}
-        >
-          {trip.status.charAt(0).toUpperCase() + trip.status.slice(1)}
-        </span>
-
-        {/* Visibility badge */}
-        <span className="text-[11px] text-gray-500 border border-gray-200 px-2 py-0.5 rounded-full">
-          {trip.visibility}
-        </span>
-      </div>
-
-      {/* ── Description ────────────────────────────────────────────────────── */}
-      {(trip.description || isOwner) && (
-        <div className="max-w-4xl mx-auto px-4 pt-4">
-          <p className="text-sm text-gray-600 leading-relaxed">
+          {/* Destination */}
+          <div className="flex items-center gap-1.5 text-white/60 text-sm mb-2">
+            <LocationOnIcon style={{ fontSize: 15 }} />
             {isOwner ? (
-              <InlineEdit
-                value={trip.description}
-                onSave={(v) => saveField("description", v)}
-                label="description"
-                multiline
-              />
-            ) : (
-              trip.description
-            )}
+              <InlineEdit value={trip.destination} onSave={(v) => saveField("destination", v)} label="destination" className="text-white/60" />
+            ) : (trip.destination ?? <span className="italic">No destination set</span>)}
+          </div>
+
+          {/* Description */}
+          <p className="text-white/60 text-sm max-w-xl leading-relaxed mb-4">
+            {isOwner ? (
+              <InlineEdit value={trip.description} onSave={(v) => saveField("description", v)} label="description" multiline className="text-white/60" />
+            ) : (trip.description)}
           </p>
-        </div>
-      )}
 
-      {/* ── Tab bar ─────────────────────────────────────────────────────────── */}
-      <div className="max-w-4xl mx-auto px-4 mt-6">
-        <div className="flex gap-0 border-b border-gray-200">
-          {(
-            [
-              { key: "days", label: "Days", Icon: MapIcon },
-              {
-                key: "collaborators",
-                label: "Collaborators",
-                Icon: PeopleIcon,
-              },
-              {
-                key: "documents",
-                label: "Documents",
-                Icon: InsertDriveFileIcon,
-              },
-            ] as const
-          ).map(({ key, label, Icon }) => (
-            <button
-              key={key}
-              onClick={() => setActiveTab(key)}
-              className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition ${
-                activeTab === key
-                  ? "border-indigo-500 text-indigo-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              <Icon style={{ fontSize: 16 }} />
-              {label}
-              {key === "collaborators" && collaborators.length > 0 && (
-                <span className="text-[10px] bg-gray-100 text-gray-600 rounded-full px-1.5 py-0.5 font-semibold">
-                  {collaborators.length}
-                </span>
-              )}
-              {key === "documents" && documents.length > 0 && (
-                <span className="text-[10px] bg-gray-100 text-gray-600 rounded-full px-1.5 py-0.5 font-semibold">
-                  {documents.length}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Tab content ─────────────────────────────────────────────────────── */}
-      <div className="max-w-4xl mx-auto px-4 py-6 pb-24">
-        {/* ── Days tab ─────────────────────────────────────────────────── */}
-        {activeTab === "days" && (
-          <div className="flex flex-col gap-3">
-            {days.length === 0 && (
-              <p className="text-sm text-gray-400 italic py-4 text-center">
-                No days added to this trip yet.
-              </p>
-            )}
-            {days.map((day, idx) => (
-              <div
-                key={day.id}
-                className="flex items-center gap-3 bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition"
-              >
-                {/* Thumbnail */}
-                <div className="relative w-20 h-20 shrink-0 bg-gray-100">
-                  {day.image_url ? (
-                    <Image
-                      src={day.image_url}
-                      alt={day.title ?? `Day ${idx + 1}`}
-                      fill
-                      className="object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-gray-300">
-                      <MapIcon style={{ fontSize: 28 }} />
-                    </div>
-                  )}
-                </div>
-
-                {/* Info */}
-                <div className="flex-1 min-w-0 py-2">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
-                    Day {idx + 1}
-                    {day.date && (
-                      <span className="ml-2 font-normal normal-case">
-                        {new Date(day.date).toLocaleDateString("en-US", {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </span>
-                    )}
-                  </p>
-                  <p className="font-semibold text-sm text-gray-900 truncate mt-0.5">
-                    {day.title ?? "Untitled day"}
-                  </p>
-                  {(day.city || day.country) && (
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {[day.city, day.country].filter(Boolean).join(", ")}
-                    </p>
-                  )}
-                  {day.category_type && day.category_type.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {day.category_type.slice(0, 3).map((c) => (
-                        <span
-                          key={c}
-                          className="text-[10px] bg-blue-50 text-blue-600 rounded-full px-1.5 py-0.5 font-medium capitalize"
-                        >
-                          {c.replace(/_/g, " ")}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Actions */}
-                <div className="flex flex-col items-end gap-1.5 px-3 py-2 shrink-0">
-                  <span
-                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                      day.visibility === "public"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-amber-100 text-amber-700"
-                    }`}
-                  >
-                    {day.visibility === "public" ? "Public" : "Draft"}
-                  </span>
-                  <Link
-                    href={`/day/${day.id}`}
-                    className="flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-800 font-medium"
-                  >
-                    View <OpenInNewIcon style={{ fontSize: 12 }} />
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ── Collaborators tab ──────────────────────────────────────── */}
-        {activeTab === "collaborators" && (
-          <div className="flex flex-col gap-4">
-            {/* Invite form (owner only) */}
-            {isOwner && (
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-                <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                  <PersonAddIcon style={{ fontSize: 16 }} />
-                  Invite collaborator
-                </p>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <input
-                    type="email"
-                    placeholder="Email address"
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleInvite()}
-                    className="flex-1 text-sm border border-gray-200 rounded px-3 py-1.5 focus:outline-none focus:border-indigo-400"
-                  />
-                  <select
-                    value={inviteRole}
-                    onChange={(e) =>
-                      setInviteRole(e.target.value as "editor" | "viewer")
-                    }
-                    className="text-sm border border-gray-200 rounded px-3 py-1.5 focus:outline-none focus:border-indigo-400"
-                  >
-                    <option value="editor">Editor</option>
-                    <option value="viewer">Viewer</option>
-                  </select>
-                  <button
-                    onClick={handleInvite}
-                    disabled={inviteLoading || !inviteEmail.trim()}
-                    className="flex items-center gap-1 text-sm bg-indigo-600 text-white px-4 py-1.5 rounded font-medium hover:bg-indigo-700 transition disabled:opacity-40"
-                  >
-                    {inviteLoading ? (
-                      <CircularProgress size={14} color="inherit" />
-                    ) : (
-                      <AddIcon style={{ fontSize: 14 }} />
-                    )}
-                    Invite
-                  </button>
-                </div>
-                {inviteError && (
-                  <p className="text-xs text-red-500 mt-2">{inviteError}</p>
-                )}
-              </div>
-            )}
-
-            {/* Collaborator list */}
-            <div className="flex flex-col gap-2">
-              {collaborators.length === 0 ? (
-                <p className="text-sm text-gray-400 italic text-center py-4">
-                  No collaborators yet.
-                </p>
-              ) : (
-                collaborators.map((c) => (
-                  <div
-                    key={c.id}
-                    className="flex items-center gap-3 bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3"
-                  >
-                    {/* Avatar placeholder */}
-                    <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-semibold text-sm shrink-0">
-                      {(c.full_name ?? c.email ?? "?").charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {c.full_name ?? c.email ?? c.user_id}
-                      </p>
-                      {c.email && c.full_name && (
-                        <p className="text-xs text-gray-400 truncate">
-                          {c.email}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span
-                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                          c.role === "owner"
-                            ? "bg-purple-100 text-purple-700"
-                            : c.role === "editor"
-                              ? "bg-green-100 text-green-700"
-                              : "bg-gray-100 text-gray-500"
-                        }`}
-                      >
-                        {c.role}
-                      </span>
-                      {!c.accepted && (
-                        <span className="text-[10px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
-                          Pending
-                        </span>
-                      )}
-                      {isOwner && c.role !== "owner" && (
-                        <button
-                          onClick={() => handleRemoveCollaborator(c.id)}
-                          className="text-gray-300 hover:text-red-500 transition"
-                          title="Remove collaborator"
-                        >
-                          <DeleteIcon style={{ fontSize: 15 }} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── Documents tab ──────────────────────────────────────────── */}
-        {activeTab === "documents" && (
-          <div className="flex flex-col gap-4">
-            {/* Upload area */}
-            <div
-              className="bg-white rounded-xl border-2 border-dashed border-gray-200 hover:border-indigo-300 transition p-6 cursor-pointer text-center"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,application/pdf,.doc,.docx,.txt,.xls,.xlsx"
-                className="hidden"
-                onChange={handleUpload}
-              />
-              {uploading ? (
-                <div className="flex flex-col items-center gap-2">
-                  <CircularProgress size={24} />
-                  <p className="text-sm text-gray-500">Uploading…</p>
-                </div>
-              ) : (
-                <>
-                  <UploadFileIcon
-                    style={{ fontSize: 32 }}
-                    className="text-gray-300"
-                  />
-                  <p className="text-sm font-medium text-gray-600 mt-2">
-                    Click to upload a document
-                  </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    PDF, Word, Excel, images up to 50 MB
-                  </p>
-                </>
-              )}
-            </div>
-            {uploadError && (
-              <p className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded">
-                {uploadError}
-              </p>
-            )}
-
-            {/* Document list */}
-            {documents.length === 0 ? (
-              <p className="text-sm text-gray-400 italic text-center py-4">
-                No documents uploaded yet.
-              </p>
+          {/* Dates */}
+          <div className="flex items-center gap-2 text-sm text-white/50 mb-5">
+            <CalendarTodayIcon style={{ fontSize: 14 }} />
+            {editingDates ? (
+              <span className="flex items-center gap-2">
+                <input type="date" value={draftStart} onChange={(e) => setDraftStart(e.target.value)}
+                  className="bg-white/10 border border-white/20 text-white text-sm rounded px-2 py-0.5 focus:outline-none focus:border-teal-400" />
+                <span className="text-white/30">→</span>
+                <input type="date" value={draftEnd} onChange={(e) => setDraftEnd(e.target.value)}
+                  className="bg-white/10 border border-white/20 text-white text-sm rounded px-2 py-0.5 focus:outline-none focus:border-teal-400" />
+                <button onClick={saveDates} disabled={datesSaving} className="text-teal-400 hover:text-teal-300 disabled:opacity-40">
+                  <CheckIcon style={{ fontSize: 16 }} />
+                </button>
+                <button onClick={() => setEditingDates(false)} className="text-white/40 hover:text-white/70">
+                  <CloseIcon style={{ fontSize: 16 }} />
+                </button>
+              </span>
             ) : (
-              <div className="flex flex-col gap-2">
-                {documents.map((doc) => (
-                  <div
-                    key={doc.id}
-                    className="flex items-center gap-3 bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3"
-                  >
-                    <InsertDriveFileIcon
-                      style={{ fontSize: 22 }}
-                      className="text-indigo-300 shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {doc.name}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {doc.document_type} · {formatBytes(doc.file_size)} ·{" "}
-                        {new Date(doc.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <a
-                        href={doc.document_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-indigo-600 hover:text-indigo-800 transition"
-                        title="Open document"
-                      >
-                        <LinkIcon style={{ fontSize: 16 }} />
-                      </a>
-                      {(doc.owner_id === currentUserId || isOwner) && (
-                        <button
-                          onClick={() => handleDeleteDocument(doc.id)}
-                          className="text-gray-300 hover:text-red-500 transition"
-                          title="Delete document"
-                        >
-                          <DeleteIcon style={{ fontSize: 16 }} />
-                        </button>
-                      )}
-                    </div>
+              <span className="flex items-center gap-1 cursor-pointer hover:text-white/80 group transition" onClick={isOwner ? openDateEdit : undefined}>
+                {trip.start_date || trip.end_date
+                  ? <>{formatDate(trip.start_date)}{trip.end_date && ` → ${formatDate(trip.end_date)}`}</>
+                  : <span className="italic text-white/30">Add dates</span>}
+                {isOwner && <EditIcon style={{ fontSize: 11 }} className="opacity-0 group-hover:opacity-60 transition" />}
+              </span>
+            )}
+          </div>
+
+          {/* Collaborator avatars */}
+          {collaborators.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <div className="flex -space-x-2">
+                {collaborators.slice(0, 5).map((c) => (
+                  <div key={c.id} title={c.full_name ?? c.email ?? ""}
+                    className="w-8 h-8 rounded-full border-2 border-gray-950 bg-teal-700 flex items-center justify-center text-white text-xs font-bold overflow-hidden shrink-0">
+                    {(c.full_name ?? c.email ?? "?").charAt(0).toUpperCase()}
                   </div>
                 ))}
               </div>
+              {collaborators.length > 5 && (
+                <span className="text-xs text-white/40 ml-1">+{collaborators.length - 5} more</span>
+              )}
+              <span className="text-xs text-white/40 ml-1">{collaborators.length} traveller{collaborators.length !== 1 ? "s" : ""}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Sticky nav ────────────────────────────────────────────────────── */}
+      <nav
+        className={`sticky top-0 z-40 transition-all duration-300 border-b ${
+          showNav
+            ? "bg-gray-950/90 backdrop-blur-md border-white/10 shadow-lg"
+            : "bg-gray-950 border-gray-800"
+        }`}
+      >
+        <div className="max-w-5xl mx-auto px-5 flex items-center gap-1 h-12 overflow-x-auto">
+          {(
+            [
+              { label: "Days", ref: daysRef, icon: <MapIcon style={{ fontSize: 15 }} /> },
+              { label: "Travellers", ref: travellersRef, icon: <PeopleIcon style={{ fontSize: 15 }} /> },
+              { label: "Documents", ref: docsRef, icon: <DescriptionIcon style={{ fontSize: 15 }} /> },
+              { label: "Map", ref: mapRef, icon: <LocationOnIcon style={{ fontSize: 15 }} /> },
+            ] as const
+          ).map(({ label, ref, icon }) => (
+            <button
+              key={label}
+              onClick={() => scrollTo(ref as React.RefObject<HTMLElement | null>)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-white/60 hover:text-white rounded-lg hover:bg-white/5 transition whitespace-nowrap"
+            >
+              {icon}{label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      <div className="max-w-5xl mx-auto px-5 pb-32">
+
+        {/* ── Days ──────────────────────────────────────────────────────── */}
+        <section ref={daysRef} className="pt-14 scroll-mt-20">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-bold text-white">Days</h2>
+              <p className="text-sm text-gray-500 mt-0.5">{days.length} day{days.length !== 1 ? "s" : ""} planned</p>
+            </div>
+            {isOwner && (
+              <button
+                onClick={() => setAddDayOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-500 text-white rounded-xl transition"
+              >
+                <AddIcon style={{ fontSize: 16 }} />
+                Add Day
+              </button>
             )}
           </div>
+
+          {days.length === 0 ? (
+            <div className="flex flex-col items-center gap-4 py-16 border border-dashed border-gray-700 rounded-2xl text-center">
+              <span className="text-5xl opacity-30">🗺️</span>
+              <p className="text-gray-500 text-sm">No days added yet.</p>
+              {isOwner && (
+                <button onClick={() => setAddDayOpen(true)}
+                  className="flex items-center gap-1.5 px-5 py-2 text-sm font-semibold bg-teal-700 hover:bg-teal-600 text-white rounded-xl transition">
+                  <AddIcon style={{ fontSize: 16 }} />Add your first day
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {days.map((day, idx) => (
+                <Link key={day.id} href={`/day/${day.id}`}
+                  className="group relative rounded-2xl overflow-hidden bg-gray-900 border border-white/5 hover:border-teal-500/40 shadow-lg hover:shadow-teal-900/30 transition-all duration-300 aspect-4/3 block">
+                  {/* Background image */}
+                  {day.image_url ? (
+                    <Image src={day.image_url} alt={day.title ?? `Day ${idx + 1}`} fill
+                      className="object-cover group-hover:scale-105 transition-transform duration-500"
+                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                      placeholder={day.image_blurhash ? "blur" : undefined}
+                      blurDataURL={day.image_blurhash ? `data:image/jpeg;base64,${day.image_blurhash}` : undefined}
+                    />
+                  ) : (
+                    <div className="absolute inset-0 bg-linear-to-br from-gray-800 to-gray-900 flex items-center justify-center">
+                      <MapIcon style={{ fontSize: 40 }} className="text-gray-700" />
+                    </div>
+                  )}
+                  {/* Overlay */}
+                  <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/20 to-transparent" />
+                  {/* Day badge */}
+                  <div className="absolute top-3 left-3 bg-teal-600/90 backdrop-blur-sm text-white text-[11px] font-bold px-2 py-0.5 rounded-full">
+                    Day {idx + 1}
+                  </div>
+                  {/* Visibility */}
+                  <div className={`absolute top-3 right-3 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                    day.visibility === "public" ? "bg-green-500/20 text-green-300 border border-green-500/30"
+                    : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                  }`}>
+                    {day.visibility === "public" ? "Public" : "Draft"}
+                  </div>
+                  {/* Content */}
+                  <div className="absolute bottom-0 left-0 right-0 p-3">
+                    {day.date && (
+                      <p className="text-white/50 text-[11px] mb-0.5">
+                        {new Date(day.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                      </p>
+                    )}
+                    <p className="font-bold text-white text-sm leading-snug truncate">{day.title ?? "Untitled day"}</p>
+                    {(day.city || day.country) && (
+                      <p className="text-white/50 text-xs mt-0.5 truncate">
+                        {[day.city, day.country].filter(Boolean).join(", ")}
+                      </p>
+                    )}
+                    {day.category_type && day.category_type.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {day.category_type.slice(0, 2).map((c) => (
+                          <span key={c} className="text-[10px] bg-white/10 text-white/70 rounded-full px-1.5 py-0.5 capitalize">
+                            {c.replace(/_/g, " ")}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </Link>
+              ))}
+              {/* Add day card */}
+              {isOwner && (
+                <button onClick={() => setAddDayOpen(true)}
+                  className="group rounded-2xl overflow-hidden border-2 border-dashed border-gray-700 hover:border-teal-600 bg-gray-900/50 hover:bg-gray-800/50 aspect-4/3 flex flex-col items-center justify-center gap-3 transition-all duration-300">
+                  <div className="w-12 h-12 rounded-full bg-teal-900/50 flex items-center justify-center group-hover:bg-teal-700/50 transition">
+                    <AddIcon style={{ fontSize: 22 }} className="text-teal-400" />
+                  </div>
+                  <span className="text-sm text-gray-500 group-hover:text-teal-400 font-medium transition">Add day plan</span>
+                </button>
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* ── Travellers ────────────────────────────────────────────────── */}
+        <section ref={travellersRef} className="pt-16 scroll-mt-20">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-bold text-white">Travellers</h2>
+              <p className="text-sm text-gray-500 mt-0.5">{collaborators.length} member{collaborators.length !== 1 ? "s" : ""}</p>
+            </div>
+          </div>
+
+          {/* Collaborator grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-6">
+            {collaborators.map((c) => (
+              <div key={c.id}
+                className="flex flex-col items-center gap-2 bg-gray-900 border border-white/5 rounded-2xl py-5 px-3 text-center relative group hover:border-teal-500/30 transition">
+                <div className="w-12 h-12 rounded-full bg-teal-800 border-2 border-teal-700 flex items-center justify-center text-white font-bold text-lg shrink-0">
+                  {(c.full_name ?? c.email ?? "?").charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0 w-full">
+                  <p className="text-sm font-semibold text-white truncate">{c.full_name ?? c.email ?? c.user_id}</p>
+                  {c.email && c.full_name && <p className="text-[11px] text-gray-500 truncate">{c.email}</p>}
+                  <div className="flex items-center justify-center gap-1 mt-1.5 flex-wrap">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      c.role === "owner" ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                      : c.role === "editor" ? "bg-teal-500/20 text-teal-300 border border-teal-500/30"
+                      : "bg-gray-700 text-gray-400"
+                    }`}>{c.role}</span>
+                    {!c.accepted && <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full">Pending</span>}
+                  </div>
+                </div>
+                {isOwner && c.role !== "owner" && (
+                  <button onClick={() => handleRemoveCollaborator(c.id)}
+                    className="absolute top-2 right-2 text-gray-700 hover:text-red-400 opacity-0 group-hover:opacity-100 transition">
+                    <CloseIcon style={{ fontSize: 14 }} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Invite form (owner only) */}
+          {isOwner && (
+            <div className="bg-gray-900 border border-white/5 rounded-2xl p-5">
+              <p className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                <PeopleIcon style={{ fontSize: 16 }} className="text-teal-400" />
+                Invite someone
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input type="email" placeholder="Email address" value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleInvite()}
+                  className="flex-1 text-sm bg-gray-800 border border-gray-700 text-white placeholder:text-gray-500 rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500 transition" />
+                <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as "editor" | "viewer")}
+                  className="text-sm bg-gray-800 border border-gray-700 text-white rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500">
+                  <option value="editor">Editor</option>
+                  <option value="viewer">Viewer</option>
+                </select>
+                <button onClick={handleInvite} disabled={inviteLoading || !inviteEmail.trim()}
+                  className="flex items-center gap-1.5 text-sm bg-teal-600 hover:bg-teal-500 text-white px-4 py-2 rounded-xl font-semibold transition disabled:opacity-40">
+                  {inviteLoading ? <CircularProgress size={14} color="inherit" /> : <AddIcon style={{ fontSize: 15 }} />}
+                  Invite
+                </button>
+              </div>
+              {inviteError && <p className="text-xs text-red-400 mt-2">{inviteError}</p>}
+            </div>
+          )}
+        </section>
+
+        {/* ── Documents ─────────────────────────────────────────────────── */}
+        <section ref={docsRef} className="pt-16 scroll-mt-20">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-bold text-white">Documents</h2>
+              <p className="text-sm text-gray-500 mt-0.5">{documents.length} file{documents.length !== 1 ? "s" : ""}</p>
+            </div>
+            <button onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-gray-800 hover:bg-gray-700 text-white border border-gray-700 rounded-xl transition">
+              <UploadFileIcon style={{ fontSize: 15 }} />
+              Upload
+            </button>
+            <input ref={fileInputRef} type="file" accept="image/*,application/pdf,.doc,.docx,.txt,.xls,.xlsx"
+              className="hidden" onChange={handleUpload} />
+          </div>
+
+          {uploadError && <p className="text-xs text-red-400 bg-red-950/50 border border-red-800 px-3 py-2 rounded-xl mb-3">{uploadError}</p>}
+          {uploading && (
+            <div className="flex items-center gap-2 text-sm text-gray-400 mb-3">
+              <CircularProgress size={14} style={{ color: "#0d9488" }} />
+              Uploading…
+            </div>
+          )}
+
+          {documents.length === 0 ? (
+            <div onClick={() => fileInputRef.current?.click()}
+              className="flex flex-col items-center gap-3 py-12 border-2 border-dashed border-gray-700 hover:border-teal-600 rounded-2xl text-center cursor-pointer group transition">
+              <UploadFileIcon style={{ fontSize: 36 }} className="text-gray-700 group-hover:text-teal-600 transition" />
+              <p className="text-gray-500 text-sm">Click to upload documents</p>
+              <p className="text-gray-600 text-xs">PDF, Word, Excel, images up to 50 MB</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {documents.map((doc) => (
+                <div key={doc.id}
+                  className="flex items-center gap-3 bg-gray-900 border border-white/5 hover:border-teal-500/20 rounded-xl px-4 py-3 transition group">
+                  <InsertDriveFileIcon style={{ fontSize: 22 }} className="text-teal-600 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-white truncate">{doc.name}</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      {doc.document_type.split("/").pop()?.toUpperCase()} · {formatBytes(doc.file_size)} · {new Date(doc.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <a href={doc.document_url} target="_blank" rel="noopener noreferrer"
+                      className="text-gray-600 hover:text-teal-400 transition" title="Open">
+                      <OpenInNewIcon style={{ fontSize: 15 }} />
+                    </a>
+                    <a href={doc.document_url} download className="text-gray-600 hover:text-teal-400 transition" title="Download">
+                      <LinkIcon style={{ fontSize: 15 }} />
+                    </a>
+                    {(doc.owner_id === currentUserId || isOwner) && (
+                      <button onClick={() => handleDeleteDocument(doc.id)}
+                        className="text-gray-700 hover:text-red-400 transition opacity-0 group-hover:opacity-100">
+                        <DeleteIcon style={{ fontSize: 15 }} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {/* Upload more */}
+              <button onClick={() => fileInputRef.current?.click()}
+                className="flex items-center justify-center gap-2 border-2 border-dashed border-gray-700 hover:border-teal-600 rounded-xl py-4 text-gray-600 hover:text-teal-400 text-sm transition group">
+                <AddIcon style={{ fontSize: 18 }} />
+                Add document
+              </button>
+            </div>
+          )}
+        </section>
+
+        {/* ── Map ───────────────────────────────────────────────────────── */}
+        {days.length > 0 && (
+          <section ref={mapRef} className="pt-16 scroll-mt-20">
+            <div className="mb-6">
+              <h2 className="text-xl font-bold text-white">Trip Map</h2>
+              <p className="text-sm text-gray-500 mt-0.5">All {days.length} day{days.length !== 1 ? "s" : ""} on the map</p>
+            </div>
+            <div className="rounded-2xl overflow-hidden border border-white/5 shadow-xl" style={{ height: 480 }}>
+              <TripMiniMap days={days} tripId={tripId} />
+            </div>
+          </section>
         )}
+
       </div>
+
+      {/* ── Add Day Modal ────────────────────────────────────────────────── */}
+      {addDayOpen && (
+        <AddDayModal
+          tripId={tripId}
+          existingDayIds={days.map((d) => d.id)}
+          onClose={() => setAddDayOpen(false)}
+          onAdded={fetchAll}
+        />
+      )}
     </div>
   );
 }
+
