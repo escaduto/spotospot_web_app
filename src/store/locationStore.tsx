@@ -53,38 +53,46 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
 
-    const detect = async () => {
-      try {
-        // freeipapi.com — no API key required, CORS-safe, returns JSON
-        const res = await fetch("https://freeipapi.com/api/json", {
-          signal: AbortSignal.timeout(5000),
-        });
-        if (!res.ok) throw new Error("ip api failed");
-        const json = await res.json();
+    const applyFallback = () => {
+      if (!cancelled) setState({ loading: false, location: FALLBACK });
+    };
+
+    if (!navigator.geolocation) {
+      // Geolocation API not available (e.g. non-secure context)
+      applyFallback();
+      return;
+    }
+
+    // Ask the browser for the user's GPS/network position.
+    // - On first visit the browser shows a native permission prompt.
+    // - If the user previously allowed, this resolves immediately from cache.
+    // - If denied or timed out, we fall back to San Francisco.
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
         if (cancelled) return;
-
-        const lat = Number(json.latitude);
-        const lng = Number(json.longitude);
-        if (!isFinite(lat) || !isFinite(lng)) throw new Error("invalid coords");
-
         setState({
           loading: false,
           location: {
-            lat,
-            lng,
-            city: (json.cityName as string) ?? null,
-            country: (json.countryName as string) ?? null,
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            city: null, // city/country unavailable from GPS coords alone
+            country: null,
             resolved: true,
           },
         });
-      } catch {
-        if (!cancelled) {
-          setState({ loading: false, location: FALLBACK });
-        }
-      }
-    };
+      },
+      () => {
+        // Permission denied, unavailable, or timed out → use fallback
+        applyFallback();
+      },
+      {
+        // Don't wait for high-accuracy GPS — network/IP estimate is fine
+        enableHighAccuracy: false,
+        timeout: 6000,
+        maximumAge: 5 * 60 * 1000, // reuse a cached fix up to 5 min old
+      },
+    );
 
-    detect();
     return () => {
       cancelled = true;
     };

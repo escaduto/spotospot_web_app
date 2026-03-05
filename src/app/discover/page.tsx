@@ -4,11 +4,11 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 
 /**
- * Dynamically import the map component with SSR disabled –
+ * Dynamically import the full discover page component with SSR disabled –
  * MapLibre GL relies on browser APIs (canvas, WebGL).
  */
-const DiscoverMap = dynamic(
-  () => import("@/src/components/discover/DiscoverMap"),
+const DiscoverPage = dynamic(
+  () => import("@/src/components/discover/DiscoverPage"),
   {
     ssr: false,
     loading: () => (
@@ -22,7 +22,7 @@ const DiscoverMap = dynamic(
   },
 );
 
-export default function DiscoverPage() {
+export default function DiscoverPageRoute() {
   return (
     <div className="flex flex-col h-screen">
       {/* ---- Minimal header ---- */}
@@ -47,9 +47,9 @@ export default function DiscoverPage() {
         </div>
       </header>
 
-      {/* ---- Map takes remaining viewport ---- */}
-      <main className="flex-1 relative min-h-0">
-        <DiscoverMap />
+      {/* ---- Main content (map + panels) ---- */}
+      <main className="flex-1 min-h-0 relative">
+        <DiscoverPage />
       </main>
     </div>
   );

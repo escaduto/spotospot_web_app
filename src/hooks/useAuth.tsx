@@ -68,38 +68,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    // onAuthStateChange fires INITIAL_SESSION synchronously from the local
-    // token cache (no network round-trip needed), then again on refresh.
-    // This replaces the separate getSession() + timeout approach.
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-      if (!mounted) return;
+    } = supabase.auth.onAuthStateChange(
+      async (event: string, newSession: Session | null) => {
+        if (!mounted) return;
 
-      setSession(newSession);
-      setUser(newSession?.user ?? null);
+        setSession(newSession);
+        setUser(newSession?.user ?? null);
 
-      if (newSession?.user) {
-        await fetchProfile(newSession.user.id);
-      } else {
-        setProfile(null);
-      }
+        // Clear loading IMMEDIATELY — before any async work so the UI is never
+        // stuck waiting for a profile fetch that might be slow.
+        if (
+          event === "INITIAL_SESSION" ||
+          event === "SIGNED_IN" ||
+          event === "SIGNED_OUT"
+        ) {
+          if (mounted) setLoading(false);
+        }
 
-      // Only clear loading after the first event (INITIAL_SESSION or SIGNED_IN)
-      if (
-        event === "INITIAL_SESSION" ||
-        event === "SIGNED_IN" ||
-        event === "SIGNED_OUT"
-      ) {
-        if (mounted) setLoading(false);
-      }
-    });
+        // Profile fetch is fire-and-forget: it enriches the UI after the auth
+        // gate is already unblocked.
+        if (newSession?.user) {
+          await fetchProfile(newSession.user.id);
+        } else {
+          setProfile(null);
+        }
+      },
+    );
 
-    // Safety net: if INITIAL_SESSION never fires (e.g. no stored token),
-    // unblock loading after 1.5 s max.
+    // Safety net: if INITIAL_SESSION never fires (no stored token, SSR mismatch),
+    // unblock loading quickly so the UI is never stuck.
     const safetyTimer = setTimeout(() => {
       if (mounted) setLoading(false);
-    }, 1500);
+    }, 800);
 
     return () => {
       mounted = false;
