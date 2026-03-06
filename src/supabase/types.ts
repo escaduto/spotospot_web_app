@@ -1,11 +1,24 @@
 //** Supabase DB Schema */
 
 // AUTH
+export interface AvatarConfig {
+  background: string;
+  eyes: string;
+  mouth: string;
+  nose: string;
+  ears: string;
+  faceShape: string;
+  accessories: string;
+  blush: string;
+  skinTone: string;
+}
+
 export interface Profile {
   id: string;
   email: string;
   full_name: string | null;
   avatar_url: string | null;
+  avatar_config: AvatarConfig | null;
   bio: string | null;
   location: string | null;
   social_links: Record<string, string> | null; // e.g. { twitter: "https://twitter.com/username" }

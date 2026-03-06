@@ -30,6 +30,7 @@ interface AuthContextValue {
   signInWithOAuth: (provider: "google" | "apple" | "github") => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  updateProfile: (updates: Partial<Profile>) => Promise<void>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -150,6 +151,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user) await fetchProfile(user.id);
   };
 
+  const updateProfile = async (updates: Partial<Profile>) => {
+    if (!user) return;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq("id", user.id);
+    if (error) throw error;
+    await fetchProfile(user.id);
+  };
+
   /* ---------- render ------------------------------------------------- */
 
   return (
@@ -164,6 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signInWithOAuth,
         signOut,
         refreshProfile,
+        updateProfile,
       }}
     >
       {children}

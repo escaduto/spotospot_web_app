@@ -57,11 +57,6 @@ export default function AdminDayDetailPage() {
       router.replace("/");
       return;
     }
-    const role = user.user_metadata?.role ?? user.app_metadata?.role;
-    if (role !== "admin") {
-      router.replace("/");
-      return;
-    }
 
     fetchData().finally(() => setDataLoading(false));
   }, [authLoading, user, router, fetchData]);
