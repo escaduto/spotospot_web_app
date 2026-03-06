@@ -15,7 +15,9 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import AddDayModal from "@/src/components/trip/AddDayModal";
 
-const TripMiniMap = dynamic(() => import("@/src/components/trip/TripMiniMap"), { ssr: false });
+const TripMiniMap = dynamic(() => import("@/src/components/trip/TripMiniMap"), {
+  ssr: false,
+});
 
 // MUI icons
 import CalendarTodayIcon from "@mui/icons-material/CalendarToday";
@@ -371,7 +373,10 @@ export default function TripPage({
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-4 bg-gray-950 text-gray-400">
         <p className="text-lg font-semibold text-white">Trip not found.</p>
-        <button onClick={() => router.back()} className="text-sm text-teal-400 hover:underline">
+        <button
+          onClick={() => router.back()}
+          className="text-sm text-teal-400 hover:underline"
+        >
           Go back
         </button>
       </div>
@@ -388,7 +393,6 @@ export default function TripPage({
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
-
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
       <div className="relative h-[75vh] w-full overflow-hidden bg-gray-900">
         {/* Blurring / parallax image */}
@@ -433,12 +437,17 @@ export default function TripPage({
         <div className="absolute bottom-0 left-0 right-0 px-6 pb-12 max-w-5xl">
           {/* Status + visibility badges */}
           <div className="flex items-center gap-2 mb-3">
-            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
-              trip.status === "active" ? "bg-green-500/20 text-green-300 border border-green-500/30"
-              : trip.status === "planning" ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-              : trip.status === "completed" ? "bg-sky-500/20 text-sky-300 border border-sky-500/30"
-              : "bg-gray-500/20 text-gray-400 border border-gray-500/30"
-            }`}>
+            <span
+              className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                trip.status === "active"
+                  ? "bg-green-500/20 text-green-300 border border-green-500/30"
+                  : trip.status === "planning"
+                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                    : trip.status === "completed"
+                      ? "bg-sky-500/20 text-sky-300 border border-sky-500/30"
+                      : "bg-gray-500/20 text-gray-400 border border-gray-500/30"
+              }`}
+            >
               {trip.status.charAt(0).toUpperCase() + trip.status.slice(1)}
             </span>
             <span className="text-[11px] text-white/40 border border-white/10 px-2 py-0.5 rounded-full">
@@ -449,23 +458,47 @@ export default function TripPage({
           {/* Title */}
           <h1 className="text-3xl sm:text-5xl font-extrabold text-white leading-tight mb-2">
             {isOwner ? (
-              <InlineEdit value={trip.title} onSave={(v) => saveField("title", v)} label="title" className="text-white" />
-            ) : (trip.title)}
+              <InlineEdit
+                value={trip.title}
+                onSave={(v) => saveField("title", v)}
+                label="title"
+                className="text-white"
+              />
+            ) : (
+              trip.title
+            )}
           </h1>
 
           {/* Destination */}
           <div className="flex items-center gap-1.5 text-white/60 text-sm mb-2">
             <LocationOnIcon style={{ fontSize: 15 }} />
             {isOwner ? (
-              <InlineEdit value={trip.destination} onSave={(v) => saveField("destination", v)} label="destination" className="text-white/60" />
-            ) : (trip.destination ?? <span className="italic">No destination set</span>)}
+              <InlineEdit
+                value={trip.destination}
+                onSave={(v) => saveField("destination", v)}
+                label="destination"
+                className="text-white/60"
+              />
+            ) : (
+              (trip.destination ?? (
+                <span className="italic">No destination set</span>
+              ))
+            )}
           </div>
 
           {/* Description */}
           <p className="text-white/60 text-sm max-w-xl leading-relaxed mb-4">
             {isOwner ? (
-              <InlineEdit value={trip.description} onSave={(v) => saveField("description", v)} label="description" multiline className="text-white/60" />
-            ) : (trip.description)}
+              <InlineEdit
+                value={trip.description}
+                onSave={(v) => saveField("description", v)}
+                label="description"
+                multiline
+                className="text-white/60"
+              />
+            ) : (
+              trip.description
+            )}
           </p>
 
           {/* Dates */}
@@ -473,24 +506,52 @@ export default function TripPage({
             <CalendarTodayIcon style={{ fontSize: 14 }} />
             {editingDates ? (
               <span className="flex items-center gap-2">
-                <input type="date" value={draftStart} onChange={(e) => setDraftStart(e.target.value)}
-                  className="bg-white/10 border border-white/20 text-white text-sm rounded px-2 py-0.5 focus:outline-none focus:border-teal-400" />
+                <input
+                  type="date"
+                  value={draftStart}
+                  onChange={(e) => setDraftStart(e.target.value)}
+                  className="bg-white/10 border border-white/20 text-white text-sm rounded px-2 py-0.5 focus:outline-none focus:border-teal-400"
+                />
                 <span className="text-white/30">→</span>
-                <input type="date" value={draftEnd} onChange={(e) => setDraftEnd(e.target.value)}
-                  className="bg-white/10 border border-white/20 text-white text-sm rounded px-2 py-0.5 focus:outline-none focus:border-teal-400" />
-                <button onClick={saveDates} disabled={datesSaving} className="text-teal-400 hover:text-teal-300 disabled:opacity-40">
+                <input
+                  type="date"
+                  value={draftEnd}
+                  onChange={(e) => setDraftEnd(e.target.value)}
+                  className="bg-white/10 border border-white/20 text-white text-sm rounded px-2 py-0.5 focus:outline-none focus:border-teal-400"
+                />
+                <button
+                  onClick={saveDates}
+                  disabled={datesSaving}
+                  className="text-teal-400 hover:text-teal-300 disabled:opacity-40"
+                >
                   <CheckIcon style={{ fontSize: 16 }} />
                 </button>
-                <button onClick={() => setEditingDates(false)} className="text-white/40 hover:text-white/70">
+                <button
+                  onClick={() => setEditingDates(false)}
+                  className="text-white/40 hover:text-white/70"
+                >
                   <CloseIcon style={{ fontSize: 16 }} />
                 </button>
               </span>
             ) : (
-              <span className="flex items-center gap-1 cursor-pointer hover:text-white/80 group transition" onClick={isOwner ? openDateEdit : undefined}>
-                {trip.start_date || trip.end_date
-                  ? <>{formatDate(trip.start_date)}{trip.end_date && ` → ${formatDate(trip.end_date)}`}</>
-                  : <span className="italic text-white/30">Add dates</span>}
-                {isOwner && <EditIcon style={{ fontSize: 11 }} className="opacity-0 group-hover:opacity-60 transition" />}
+              <span
+                className="flex items-center gap-1 cursor-pointer hover:text-white/80 group transition"
+                onClick={isOwner ? openDateEdit : undefined}
+              >
+                {trip.start_date || trip.end_date ? (
+                  <>
+                    {formatDate(trip.start_date)}
+                    {trip.end_date && ` → ${formatDate(trip.end_date)}`}
+                  </>
+                ) : (
+                  <span className="italic text-white/30">Add dates</span>
+                )}
+                {isOwner && (
+                  <EditIcon
+                    style={{ fontSize: 11 }}
+                    className="opacity-0 group-hover:opacity-60 transition"
+                  />
+                )}
               </span>
             )}
           </div>
@@ -500,16 +561,24 @@ export default function TripPage({
             <div className="flex items-center gap-1.5">
               <div className="flex -space-x-2">
                 {collaborators.slice(0, 5).map((c) => (
-                  <div key={c.id} title={c.full_name ?? c.email ?? ""}
-                    className="w-8 h-8 rounded-full border-2 border-gray-950 bg-teal-700 flex items-center justify-center text-white text-xs font-bold overflow-hidden shrink-0">
+                  <div
+                    key={c.id}
+                    title={c.full_name ?? c.email ?? ""}
+                    className="w-8 h-8 rounded-full border-2 border-gray-950 bg-teal-700 flex items-center justify-center text-white text-xs font-bold overflow-hidden shrink-0"
+                  >
                     {(c.full_name ?? c.email ?? "?").charAt(0).toUpperCase()}
                   </div>
                 ))}
               </div>
               {collaborators.length > 5 && (
-                <span className="text-xs text-white/40 ml-1">+{collaborators.length - 5} more</span>
+                <span className="text-xs text-white/40 ml-1">
+                  +{collaborators.length - 5} more
+                </span>
               )}
-              <span className="text-xs text-white/40 ml-1">{collaborators.length} traveller{collaborators.length !== 1 ? "s" : ""}</span>
+              <span className="text-xs text-white/40 ml-1">
+                {collaborators.length} traveller
+                {collaborators.length !== 1 ? "s" : ""}
+              </span>
             </div>
           )}
         </div>
@@ -526,31 +595,51 @@ export default function TripPage({
         <div className="max-w-5xl mx-auto px-5 flex items-center gap-1 h-12 overflow-x-auto">
           {(
             [
-              { label: "Days", ref: daysRef, icon: <MapIcon style={{ fontSize: 15 }} /> },
-              { label: "Travellers", ref: travellersRef, icon: <PeopleIcon style={{ fontSize: 15 }} /> },
-              { label: "Documents", ref: docsRef, icon: <DescriptionIcon style={{ fontSize: 15 }} /> },
-              { label: "Map", ref: mapRef, icon: <LocationOnIcon style={{ fontSize: 15 }} /> },
+              {
+                label: "Days",
+                ref: daysRef,
+                icon: <MapIcon style={{ fontSize: 15 }} />,
+              },
+              {
+                label: "Travellers",
+                ref: travellersRef,
+                icon: <PeopleIcon style={{ fontSize: 15 }} />,
+              },
+              {
+                label: "Documents",
+                ref: docsRef,
+                icon: <DescriptionIcon style={{ fontSize: 15 }} />,
+              },
+              {
+                label: "Map",
+                ref: mapRef,
+                icon: <LocationOnIcon style={{ fontSize: 15 }} />,
+              },
             ] as const
           ).map(({ label, ref, icon }) => (
             <button
               key={label}
-              onClick={() => scrollTo(ref as React.RefObject<HTMLElement | null>)}
+              onClick={() =>
+                scrollTo(ref as React.RefObject<HTMLElement | null>)
+              }
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-white/60 hover:text-white rounded-lg hover:bg-white/5 transition whitespace-nowrap"
             >
-              {icon}{label}
+              {icon}
+              {label}
             </button>
           ))}
         </div>
       </nav>
 
       <div className="max-w-5xl mx-auto px-5 pb-32">
-
         {/* ── Days ──────────────────────────────────────────────────────── */}
         <section ref={daysRef} className="pt-14 scroll-mt-20">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-xl font-bold text-white">Days</h2>
-              <p className="text-sm text-gray-500 mt-0.5">{days.length} day{days.length !== 1 ? "s" : ""} planned</p>
+              <p className="text-sm text-gray-500 mt-0.5">
+                {days.length} day{days.length !== 1 ? "s" : ""} planned
+              </p>
             </div>
             {isOwner && (
               <button
@@ -568,28 +657,44 @@ export default function TripPage({
               <span className="text-5xl opacity-30">🗺️</span>
               <p className="text-gray-500 text-sm">No days added yet.</p>
               {isOwner && (
-                <button onClick={() => setAddDayOpen(true)}
-                  className="flex items-center gap-1.5 px-5 py-2 text-sm font-semibold bg-teal-700 hover:bg-teal-600 text-white rounded-xl transition">
-                  <AddIcon style={{ fontSize: 16 }} />Add your first day
+                <button
+                  onClick={() => setAddDayOpen(true)}
+                  className="flex items-center gap-1.5 px-5 py-2 text-sm font-semibold bg-teal-700 hover:bg-teal-600 text-white rounded-xl transition"
+                >
+                  <AddIcon style={{ fontSize: 16 }} />
+                  Add your first day
                 </button>
               )}
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {days.map((day, idx) => (
-                <Link key={day.id} href={`/day/${day.id}`}
-                  className="group relative rounded-2xl overflow-hidden bg-gray-900 border border-white/5 hover:border-teal-500/40 shadow-lg hover:shadow-teal-900/30 transition-all duration-300 aspect-4/3 block">
+                <Link
+                  key={day.id}
+                  href={`/day/${day.id}`}
+                  className="group relative rounded-2xl overflow-hidden bg-gray-900 border border-white/5 hover:border-teal-500/40 shadow-lg hover:shadow-teal-900/30 transition-all duration-300 aspect-4/3 block"
+                >
                   {/* Background image */}
                   {day.image_url ? (
-                    <Image src={day.image_url} alt={day.title ?? `Day ${idx + 1}`} fill
+                    <Image
+                      src={day.image_url}
+                      alt={day.title ?? `Day ${idx + 1}`}
+                      fill
                       className="object-cover group-hover:scale-105 transition-transform duration-500"
                       sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                       placeholder={day.image_blurhash ? "blur" : undefined}
-                      blurDataURL={day.image_blurhash ? `data:image/jpeg;base64,${day.image_blurhash}` : undefined}
+                      blurDataURL={
+                        day.image_blurhash
+                          ? `data:image/jpeg;base64,${day.image_blurhash}`
+                          : undefined
+                      }
                     />
                   ) : (
                     <div className="absolute inset-0 bg-linear-to-br from-gray-800 to-gray-900 flex items-center justify-center">
-                      <MapIcon style={{ fontSize: 40 }} className="text-gray-700" />
+                      <MapIcon
+                        style={{ fontSize: 40 }}
+                        className="text-gray-700"
+                      />
                     </div>
                   )}
                   {/* Overlay */}
@@ -599,20 +704,29 @@ export default function TripPage({
                     Day {idx + 1}
                   </div>
                   {/* Visibility */}
-                  <div className={`absolute top-3 right-3 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                    day.visibility === "public" ? "bg-green-500/20 text-green-300 border border-green-500/30"
-                    : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                  }`}>
+                  <div
+                    className={`absolute top-3 right-3 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                      day.visibility === "public"
+                        ? "bg-green-500/20 text-green-300 border border-green-500/30"
+                        : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                    }`}
+                  >
                     {day.visibility === "public" ? "Public" : "Draft"}
                   </div>
                   {/* Content */}
                   <div className="absolute bottom-0 left-0 right-0 p-3">
                     {day.date && (
                       <p className="text-white/50 text-[11px] mb-0.5">
-                        {new Date(day.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                        {new Date(day.date).toLocaleDateString("en-US", {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                        })}
                       </p>
                     )}
-                    <p className="font-bold text-white text-sm leading-snug truncate">{day.title ?? "Untitled day"}</p>
+                    <p className="font-bold text-white text-sm leading-snug truncate">
+                      {day.title ?? "Untitled day"}
+                    </p>
                     {(day.city || day.country) && (
                       <p className="text-white/50 text-xs mt-0.5 truncate">
                         {[day.city, day.country].filter(Boolean).join(", ")}
@@ -621,7 +735,10 @@ export default function TripPage({
                     {day.category_type && day.category_type.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-2">
                         {day.category_type.slice(0, 2).map((c) => (
-                          <span key={c} className="text-[10px] bg-white/10 text-white/70 rounded-full px-1.5 py-0.5 capitalize">
+                          <span
+                            key={c}
+                            className="text-[10px] bg-white/10 text-white/70 rounded-full px-1.5 py-0.5 capitalize"
+                          >
                             {c.replace(/_/g, " ")}
                           </span>
                         ))}
@@ -632,12 +749,19 @@ export default function TripPage({
               ))}
               {/* Add day card */}
               {isOwner && (
-                <button onClick={() => setAddDayOpen(true)}
-                  className="group rounded-2xl overflow-hidden border-2 border-dashed border-gray-700 hover:border-teal-600 bg-gray-900/50 hover:bg-gray-800/50 aspect-4/3 flex flex-col items-center justify-center gap-3 transition-all duration-300">
+                <button
+                  onClick={() => setAddDayOpen(true)}
+                  className="group rounded-2xl overflow-hidden border-2 border-dashed border-gray-700 hover:border-teal-600 bg-gray-900/50 hover:bg-gray-800/50 aspect-4/3 flex flex-col items-center justify-center gap-3 transition-all duration-300"
+                >
                   <div className="w-12 h-12 rounded-full bg-teal-900/50 flex items-center justify-center group-hover:bg-teal-700/50 transition">
-                    <AddIcon style={{ fontSize: 22 }} className="text-teal-400" />
+                    <AddIcon
+                      style={{ fontSize: 22 }}
+                      className="text-teal-400"
+                    />
                   </div>
-                  <span className="text-sm text-gray-500 group-hover:text-teal-400 font-medium transition">Add day plan</span>
+                  <span className="text-sm text-gray-500 group-hover:text-teal-400 font-medium transition">
+                    Add day plan
+                  </span>
                 </button>
               )}
             </div>
@@ -649,33 +773,56 @@ export default function TripPage({
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-xl font-bold text-white">Travellers</h2>
-              <p className="text-sm text-gray-500 mt-0.5">{collaborators.length} member{collaborators.length !== 1 ? "s" : ""}</p>
+              <p className="text-sm text-gray-500 mt-0.5">
+                {collaborators.length} member
+                {collaborators.length !== 1 ? "s" : ""}
+              </p>
             </div>
           </div>
 
           {/* Collaborator grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-6">
             {collaborators.map((c) => (
-              <div key={c.id}
-                className="flex flex-col items-center gap-2 bg-gray-900 border border-white/5 rounded-2xl py-5 px-3 text-center relative group hover:border-teal-500/30 transition">
+              <div
+                key={c.id}
+                className="flex flex-col items-center gap-2 bg-gray-900 border border-white/5 rounded-2xl py-5 px-3 text-center relative group hover:border-teal-500/30 transition"
+              >
                 <div className="w-12 h-12 rounded-full bg-teal-800 border-2 border-teal-700 flex items-center justify-center text-white font-bold text-lg shrink-0">
                   {(c.full_name ?? c.email ?? "?").charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0 w-full">
-                  <p className="text-sm font-semibold text-white truncate">{c.full_name ?? c.email ?? c.user_id}</p>
-                  {c.email && c.full_name && <p className="text-[11px] text-gray-500 truncate">{c.email}</p>}
+                  <p className="text-sm font-semibold text-white truncate">
+                    {c.full_name ?? c.email ?? c.user_id}
+                  </p>
+                  {c.email && c.full_name && (
+                    <p className="text-[11px] text-gray-500 truncate">
+                      {c.email}
+                    </p>
+                  )}
                   <div className="flex items-center justify-center gap-1 mt-1.5 flex-wrap">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      c.role === "owner" ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
-                      : c.role === "editor" ? "bg-teal-500/20 text-teal-300 border border-teal-500/30"
-                      : "bg-gray-700 text-gray-400"
-                    }`}>{c.role}</span>
-                    {!c.accepted && <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full">Pending</span>}
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        c.role === "owner"
+                          ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                          : c.role === "editor"
+                            ? "bg-teal-500/20 text-teal-300 border border-teal-500/30"
+                            : "bg-gray-700 text-gray-400"
+                      }`}
+                    >
+                      {c.role}
+                    </span>
+                    {!c.accepted && (
+                      <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full">
+                        Pending
+                      </span>
+                    )}
                   </div>
                 </div>
                 {isOwner && c.role !== "owner" && (
-                  <button onClick={() => handleRemoveCollaborator(c.id)}
-                    className="absolute top-2 right-2 text-gray-700 hover:text-red-400 opacity-0 group-hover:opacity-100 transition">
+                  <button
+                    onClick={() => handleRemoveCollaborator(c.id)}
+                    className="absolute top-2 right-2 text-gray-700 hover:text-red-400 opacity-0 group-hover:opacity-100 transition"
+                  >
                     <CloseIcon style={{ fontSize: 14 }} />
                   </button>
                 )}
@@ -687,26 +834,47 @@ export default function TripPage({
           {isOwner && (
             <div className="bg-gray-900 border border-white/5 rounded-2xl p-5">
               <p className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                <PeopleIcon style={{ fontSize: 16 }} className="text-teal-400" />
+                <PeopleIcon
+                  style={{ fontSize: 16 }}
+                  className="text-teal-400"
+                />
                 Invite someone
               </p>
               <div className="flex flex-col sm:flex-row gap-2">
-                <input type="email" placeholder="Email address" value={inviteEmail}
+                <input
+                  type="email"
+                  placeholder="Email address"
+                  value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleInvite()}
-                  className="flex-1 text-sm bg-gray-800 border border-gray-700 text-white placeholder:text-gray-500 rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500 transition" />
-                <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as "editor" | "viewer")}
-                  className="text-sm bg-gray-800 border border-gray-700 text-white rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500">
+                  className="flex-1 text-sm bg-gray-800 border border-gray-700 text-white placeholder:text-gray-500 rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500 transition"
+                />
+                <select
+                  value={inviteRole}
+                  onChange={(e) =>
+                    setInviteRole(e.target.value as "editor" | "viewer")
+                  }
+                  className="text-sm bg-gray-800 border border-gray-700 text-white rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500"
+                >
                   <option value="editor">Editor</option>
                   <option value="viewer">Viewer</option>
                 </select>
-                <button onClick={handleInvite} disabled={inviteLoading || !inviteEmail.trim()}
-                  className="flex items-center gap-1.5 text-sm bg-teal-600 hover:bg-teal-500 text-white px-4 py-2 rounded-xl font-semibold transition disabled:opacity-40">
-                  {inviteLoading ? <CircularProgress size={14} color="inherit" /> : <AddIcon style={{ fontSize: 15 }} />}
+                <button
+                  onClick={handleInvite}
+                  disabled={inviteLoading || !inviteEmail.trim()}
+                  className="flex items-center gap-1.5 text-sm bg-teal-600 hover:bg-teal-500 text-white px-4 py-2 rounded-xl font-semibold transition disabled:opacity-40"
+                >
+                  {inviteLoading ? (
+                    <CircularProgress size={14} color="inherit" />
+                  ) : (
+                    <AddIcon style={{ fontSize: 15 }} />
+                  )}
                   Invite
                 </button>
               </div>
-              {inviteError && <p className="text-xs text-red-400 mt-2">{inviteError}</p>}
+              {inviteError && (
+                <p className="text-xs text-red-400 mt-2">{inviteError}</p>
+              )}
             </div>
           )}
         </section>
@@ -716,18 +884,31 @@ export default function TripPage({
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-xl font-bold text-white">Documents</h2>
-              <p className="text-sm text-gray-500 mt-0.5">{documents.length} file{documents.length !== 1 ? "s" : ""}</p>
+              <p className="text-sm text-gray-500 mt-0.5">
+                {documents.length} file{documents.length !== 1 ? "s" : ""}
+              </p>
             </div>
-            <button onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-gray-800 hover:bg-gray-700 text-white border border-gray-700 rounded-xl transition">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-gray-800 hover:bg-gray-700 text-white border border-gray-700 rounded-xl transition"
+            >
               <UploadFileIcon style={{ fontSize: 15 }} />
               Upload
             </button>
-            <input ref={fileInputRef} type="file" accept="image/*,application/pdf,.doc,.docx,.txt,.xls,.xlsx"
-              className="hidden" onChange={handleUpload} />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,application/pdf,.doc,.docx,.txt,.xls,.xlsx"
+              className="hidden"
+              onChange={handleUpload}
+            />
           </div>
 
-          {uploadError && <p className="text-xs text-red-400 bg-red-950/50 border border-red-800 px-3 py-2 rounded-xl mb-3">{uploadError}</p>}
+          {uploadError && (
+            <p className="text-xs text-red-400 bg-red-950/50 border border-red-800 px-3 py-2 rounded-xl mb-3">
+              {uploadError}
+            </p>
+          )}
           {uploading && (
             <div className="flex items-center gap-2 text-sm text-gray-400 mb-3">
               <CircularProgress size={14} style={{ color: "#0d9488" }} />
@@ -736,35 +917,63 @@ export default function TripPage({
           )}
 
           {documents.length === 0 ? (
-            <div onClick={() => fileInputRef.current?.click()}
-              className="flex flex-col items-center gap-3 py-12 border-2 border-dashed border-gray-700 hover:border-teal-600 rounded-2xl text-center cursor-pointer group transition">
-              <UploadFileIcon style={{ fontSize: 36 }} className="text-gray-700 group-hover:text-teal-600 transition" />
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="flex flex-col items-center gap-3 py-12 border-2 border-dashed border-gray-700 hover:border-teal-600 rounded-2xl text-center cursor-pointer group transition"
+            >
+              <UploadFileIcon
+                style={{ fontSize: 36 }}
+                className="text-gray-700 group-hover:text-teal-600 transition"
+              />
               <p className="text-gray-500 text-sm">Click to upload documents</p>
-              <p className="text-gray-600 text-xs">PDF, Word, Excel, images up to 50 MB</p>
+              <p className="text-gray-600 text-xs">
+                PDF, Word, Excel, images up to 50 MB
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {documents.map((doc) => (
-                <div key={doc.id}
-                  className="flex items-center gap-3 bg-gray-900 border border-white/5 hover:border-teal-500/20 rounded-xl px-4 py-3 transition group">
-                  <InsertDriveFileIcon style={{ fontSize: 22 }} className="text-teal-600 shrink-0" />
+                <div
+                  key={doc.id}
+                  className="flex items-center gap-3 bg-gray-900 border border-white/5 hover:border-teal-500/20 rounded-xl px-4 py-3 transition group"
+                >
+                  <InsertDriveFileIcon
+                    style={{ fontSize: 22 }}
+                    className="text-teal-600 shrink-0"
+                  />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-white truncate">{doc.name}</p>
+                    <p className="text-sm font-medium text-white truncate">
+                      {doc.name}
+                    </p>
                     <p className="text-[11px] text-gray-500 mt-0.5">
-                      {doc.document_type.split("/").pop()?.toUpperCase()} · {formatBytes(doc.file_size)} · {new Date(doc.created_at).toLocaleDateString()}
+                      {doc.document_type.split("/").pop()?.toUpperCase()} ·{" "}
+                      {formatBytes(doc.file_size)} ·{" "}
+                      {new Date(doc.created_at).toLocaleDateString()}
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <a href={doc.document_url} target="_blank" rel="noopener noreferrer"
-                      className="text-gray-600 hover:text-teal-400 transition" title="Open">
+                    <a
+                      href={doc.document_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-gray-600 hover:text-teal-400 transition"
+                      title="Open"
+                    >
                       <OpenInNewIcon style={{ fontSize: 15 }} />
                     </a>
-                    <a href={doc.document_url} download className="text-gray-600 hover:text-teal-400 transition" title="Download">
+                    <a
+                      href={doc.document_url}
+                      download
+                      className="text-gray-600 hover:text-teal-400 transition"
+                      title="Download"
+                    >
                       <LinkIcon style={{ fontSize: 15 }} />
                     </a>
                     {(doc.owner_id === currentUserId || isOwner) && (
-                      <button onClick={() => handleDeleteDocument(doc.id)}
-                        className="text-gray-700 hover:text-red-400 transition opacity-0 group-hover:opacity-100">
+                      <button
+                        onClick={() => handleDeleteDocument(doc.id)}
+                        className="text-gray-700 hover:text-red-400 transition opacity-0 group-hover:opacity-100"
+                      >
                         <DeleteIcon style={{ fontSize: 15 }} />
                       </button>
                     )}
@@ -772,8 +981,10 @@ export default function TripPage({
                 </div>
               ))}
               {/* Upload more */}
-              <button onClick={() => fileInputRef.current?.click()}
-                className="flex items-center justify-center gap-2 border-2 border-dashed border-gray-700 hover:border-teal-600 rounded-xl py-4 text-gray-600 hover:text-teal-400 text-sm transition group">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center justify-center gap-2 border-2 border-dashed border-gray-700 hover:border-teal-600 rounded-xl py-4 text-gray-600 hover:text-teal-400 text-sm transition group"
+              >
                 <AddIcon style={{ fontSize: 18 }} />
                 Add document
               </button>
@@ -786,14 +997,18 @@ export default function TripPage({
           <section ref={mapRef} className="pt-16 scroll-mt-20">
             <div className="mb-6">
               <h2 className="text-xl font-bold text-white">Trip Map</h2>
-              <p className="text-sm text-gray-500 mt-0.5">All {days.length} day{days.length !== 1 ? "s" : ""} on the map</p>
+              <p className="text-sm text-gray-500 mt-0.5">
+                All {days.length} day{days.length !== 1 ? "s" : ""} on the map
+              </p>
             </div>
-            <div className="rounded-2xl overflow-hidden border border-white/5 shadow-xl" style={{ height: 480 }}>
+            <div
+              className="rounded-2xl overflow-hidden border border-white/5 shadow-xl"
+              style={{ height: 480 }}
+            >
               <TripMiniMap days={days} tripId={tripId} />
             </div>
           </section>
         )}
-
       </div>
 
       {/* ── Add Day Modal ────────────────────────────────────────────────── */}
@@ -808,4 +1023,3 @@ export default function TripPage({
     </div>
   );
 }
-

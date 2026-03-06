@@ -32,8 +32,14 @@ interface Props {
 
 // Color palette for each day (cycles)
 const DAY_COLORS = [
-  "#0d9488", "#6366f1", "#f59e0b", "#ec4899",
-  "#10b981", "#8b5cf6", "#f97316", "#06b6d4",
+  "#0d9488",
+  "#6366f1",
+  "#f59e0b",
+  "#ec4899",
+  "#10b981",
+  "#8b5cf6",
+  "#f97316",
+  "#06b6d4",
 ];
 
 export default function TripMiniMap({ days, tripId }: Props) {
@@ -100,7 +106,9 @@ export default function TripMiniMap({ days, tripId }: Props) {
       const [itemsRes, routesRes] = await Promise.all([
         supabase
           .from("itinerary_items")
-          .select("id, title, item_type, order_index, itinerary_day_id, location_coords::text")
+          .select(
+            "id, title, item_type, order_index, itinerary_day_id, location_coords::text",
+          )
           .in("itinerary_day_id", dayIds)
           .order("order_index"),
         supabase
@@ -124,7 +132,9 @@ export default function TripMiniMap({ days, tripId }: Props) {
         });
       }
 
-      const routes: RouteFeature[] = ((routesRes.data ?? []) as Record<string, unknown>[])
+      const routes: RouteFeature[] = (
+        (routesRes.data ?? []) as Record<string, unknown>[]
+      )
         .filter((r) => r.geometry_geojson)
         .map((r) => ({
           geometry_geojson: r.geometry_geojson as string | object,
@@ -143,7 +153,11 @@ export default function TripMiniMap({ days, tripId }: Props) {
                 typeof r.geometry_geojson === "string"
                   ? JSON.parse(r.geometry_geojson)
                   : r.geometry_geojson;
-              return { type: "Feature" as const, geometry: geom, properties: {} };
+              return {
+                type: "Feature" as const,
+                geometry: geom,
+                properties: {},
+              };
             } catch {
               return null;
             }
@@ -189,7 +203,9 @@ export default function TripMiniMap({ days, tripId }: Props) {
           order_index: a.order_index,
           day_id: a.day_id,
           color:
-            DAY_COLORS[days.findIndex((d) => d.id === a.day_id) % DAY_COLORS.length] ?? "#6b7280",
+            DAY_COLORS[
+              days.findIndex((d) => d.id === a.day_id) % DAY_COLORS.length
+            ] ?? "#6b7280",
         },
       }));
 
@@ -238,12 +254,15 @@ export default function TripMiniMap({ days, tripId }: Props) {
           const feat = e.features?.[0];
           if (!feat) return;
           const { title, item_type } = feat.properties!;
-          const coords = (feat.geometry as GeoJSON.Point).coordinates as [number, number];
+          const coords = (feat.geometry as GeoJSON.Point).coordinates as [
+            number,
+            number,
+          ];
           popup
             .setLngLat(coords)
             .setHTML(
               `<div style="font-size:12px;font-weight:600;color:#111">${title}</div>` +
-              `<div style="font-size:10px;color:#6b7280;margin-top:2px;text-transform:capitalize">${(item_type as string).replace(/_/g, " ")}</div>`,
+                `<div style="font-size:10px;color:#6b7280;margin-top:2px;text-transform:capitalize">${(item_type as string).replace(/_/g, " ")}</div>`,
             )
             .addTo(map);
         });
@@ -289,7 +308,9 @@ export default function TripMiniMap({ days, tripId }: Props) {
         }
         if (day.image_url) {
           const img = new Image();
-          img.onload = () => { inner.style.backgroundImage = `url('${day.image_url}')`; };
+          img.onload = () => {
+            inner.style.backgroundImage = `url('${day.image_url}')`;
+          };
           img.src = day.image_url;
         }
 
@@ -314,8 +335,12 @@ export default function TripMiniMap({ days, tripId }: Props) {
         badge.textContent = String(idx + 1);
         inner.appendChild(badge);
 
-        el.addEventListener("mouseenter", () => { inner.style.transform = "scale(1.15)"; });
-        el.addEventListener("mouseleave", () => { inner.style.transform = "scale(1)"; });
+        el.addEventListener("mouseenter", () => {
+          inner.style.transform = "scale(1.15)";
+        });
+        el.addEventListener("mouseleave", () => {
+          inner.style.transform = "scale(1)";
+        });
 
         // Hover popup
         const markerPopup = new maplibregl.Popup({
@@ -325,8 +350,10 @@ export default function TripMiniMap({ days, tripId }: Props) {
           anchor: "bottom",
         }).setHTML(
           `<div style="font-size:12px;font-weight:700;color:#111;max-width:140px">${day.title ?? "Day " + (idx + 1)}</div>` +
-          (day.city ? `<div style="font-size:10px;color:#6b7280;margin-top:2px">${[day.city, day.country].filter(Boolean).join(", ")}</div>` : "") +
-          `<div style="font-size:10px;color:#6b7280;margin-top:2px">Day ${idx + 1}${day.date ? " · " + new Date(day.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}</div>`,
+            (day.city
+              ? `<div style="font-size:10px;color:#6b7280;margin-top:2px">${[day.city, day.country].filter(Boolean).join(", ")}</div>`
+              : "") +
+            `<div style="font-size:10px;color:#6b7280;margin-top:2px">Day ${idx + 1}${day.date ? " · " + new Date(day.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}</div>`,
         );
 
         el.addEventListener("mouseenter", () => markerPopup.addTo(map));
@@ -346,7 +373,7 @@ export default function TripMiniMap({ days, tripId }: Props) {
         });
       }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapLoaded, tripId]);
 
   return (

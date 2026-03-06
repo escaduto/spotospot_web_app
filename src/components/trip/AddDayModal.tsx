@@ -20,7 +20,12 @@ interface Props {
   onAdded: () => void;
 }
 
-export default function AddDayModal({ tripId, existingDayIds, onClose, onAdded }: Props) {
+export default function AddDayModal({
+  tripId,
+  existingDayIds,
+  onClose,
+  onAdded,
+}: Props) {
   const [tab, setTab] = useState<"mine" | "public">("mine");
   const [query, setQuery] = useState("");
   const [myDays, setMyDays] = useState<ItineraryDay[]>([]);
@@ -29,40 +34,46 @@ export default function AddDayModal({ tripId, existingDayIds, onClose, onAdded }
   const [adding, setAdding] = useState<string | null>(null);
   const supabase = createClient();
 
-  const fetchMine = useCallback(async (q: string) => {
-    setLoading(true);
-    let builder = supabase
-      .from("itinerary_days")
-      .select("*")
-      .order("updated_at", { ascending: false })
-      .limit(30);
-    if (q.trim()) builder = builder.ilike("title", `%${q.trim()}%`);
-    const { data } = await builder;
-    setMyDays(
-      ((data ?? []) as ItineraryDay[]).filter(
-        (d) => !existingDayIds.includes(d.id),
-      ),
-    );
-    setLoading(false);
-  }, [supabase, existingDayIds]);
+  const fetchMine = useCallback(
+    async (q: string) => {
+      setLoading(true);
+      let builder = supabase
+        .from("itinerary_days")
+        .select("*")
+        .order("updated_at", { ascending: false })
+        .limit(30);
+      if (q.trim()) builder = builder.ilike("title", `%${q.trim()}%`);
+      const { data } = await builder;
+      setMyDays(
+        ((data ?? []) as ItineraryDay[]).filter(
+          (d) => !existingDayIds.includes(d.id),
+        ),
+      );
+      setLoading(false);
+    },
+    [supabase, existingDayIds],
+  );
 
-  const fetchPublic = useCallback(async (q: string) => {
-    setLoading(true);
-    let builder = supabase
-      .from("itinerary_days")
-      .select("*")
-      .eq("visibility", "public")
-      .order("updated_at", { ascending: false })
-      .limit(30);
-    if (q.trim()) builder = builder.ilike("title", `%${q.trim()}%`);
-    const { data } = await builder;
-    setPublicDays(
-      ((data ?? []) as ItineraryDay[]).filter(
-        (d) => !existingDayIds.includes(d.id),
-      ),
-    );
-    setLoading(false);
-  }, [supabase, existingDayIds]);
+  const fetchPublic = useCallback(
+    async (q: string) => {
+      setLoading(true);
+      let builder = supabase
+        .from("itinerary_days")
+        .select("*")
+        .eq("visibility", "public")
+        .order("updated_at", { ascending: false })
+        .limit(30);
+      if (q.trim()) builder = builder.ilike("title", `%${q.trim()}%`);
+      const { data } = await builder;
+      setPublicDays(
+        ((data ?? []) as ItineraryDay[]).filter(
+          (d) => !existingDayIds.includes(d.id),
+        ),
+      );
+      setLoading(false);
+    },
+    [supabase, existingDayIds],
+  );
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -91,7 +102,10 @@ export default function AddDayModal({ tripId, existingDayIds, onClose, onAdded }
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
 
       {/* Modal */}
       <div className="relative w-full sm:max-w-xl bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden z-10 max-h-[85vh]">
@@ -110,8 +124,16 @@ export default function AddDayModal({ tripId, existingDayIds, onClose, onAdded }
         <div className="flex border-b border-gray-100 px-4 pt-1">
           {(
             [
-              { key: "mine", label: "My Plans", icon: <LockIcon style={{ fontSize: 14 }} /> },
-              { key: "public", label: "Public Plans", icon: <PublicIcon style={{ fontSize: 14 }} /> },
+              {
+                key: "mine",
+                label: "My Plans",
+                icon: <LockIcon style={{ fontSize: 14 }} />,
+              },
+              {
+                key: "public",
+                label: "Public Plans",
+                icon: <PublicIcon style={{ fontSize: 14 }} />,
+              },
             ] as const
           ).map(({ key, label, icon }) => (
             <button
@@ -166,7 +188,10 @@ export default function AddDayModal({ tripId, existingDayIds, onClose, onAdded }
           {loading ? (
             <div className="flex flex-col gap-2 pt-2">
               {[1, 2, 3].map((n) => (
-                <div key={n} className="flex items-center gap-3 p-3 animate-pulse">
+                <div
+                  key={n}
+                  className="flex items-center gap-3 p-3 animate-pulse"
+                >
                   <div className="w-14 h-14 bg-gray-200 rounded-xl shrink-0" />
                   <div className="flex-1 space-y-2">
                     <div className="h-3.5 bg-gray-200 rounded w-3/4" />
@@ -179,7 +204,11 @@ export default function AddDayModal({ tripId, existingDayIds, onClose, onAdded }
             <div className="flex flex-col items-center gap-3 py-10 text-center">
               <span className="text-4xl opacity-30">🗺️</span>
               <p className="text-sm text-gray-400">
-                {query ? "No plans match your search." : tab === "mine" ? "You have no unassigned day plans." : "No public plans found."}
+                {query
+                  ? "No plans match your search."
+                  : tab === "mine"
+                    ? "You have no unassigned day plans."
+                    : "No public plans found."}
               </p>
               {tab === "mine" && !query && (
                 <Link
@@ -216,7 +245,9 @@ export default function AddDayModal({ tripId, existingDayIds, onClose, onAdded }
                         }
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-xl">🗺️</div>
+                      <div className="w-full h-full flex items-center justify-center text-xl">
+                        🗺️
+                      </div>
                     )}
                   </div>
 
@@ -233,7 +264,9 @@ export default function AddDayModal({ tripId, existingDayIds, onClose, onAdded }
                     {day.date && (
                       <p className="text-xs text-gray-400 mt-0.5">
                         {new Date(day.date).toLocaleDateString("en-US", {
-                          weekday: "short", month: "short", day: "numeric",
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
                         })}
                       </p>
                     )}
