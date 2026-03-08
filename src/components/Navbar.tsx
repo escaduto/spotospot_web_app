@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAuth } from "@/src/hooks/useAuth";
 import AuthModal from "./AuthModal";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import Tooltip from "@mui/material/Tooltip";
 import IconButton from "@mui/material/IconButton";
 import AddIcon from "@mui/icons-material/Add";
@@ -14,6 +15,18 @@ export default function Navbar() {
   const { user, profile, loading, signOut } = useAuth();
   const [authOpen, setAuthOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const pathname = usePathname();
+
+  // Show app-focused nav links on interior app pages
+  const isAppPage =
+    pathname.startsWith("/dashboard") ||
+    pathname.startsWith("/trip") ||
+    pathname.startsWith("/day") ||
+    pathname.startsWith("/discover") ||
+    pathname.startsWith("/settings") ||
+    pathname.startsWith("/user") ||
+    pathname.startsWith("/create_new_plan") ||
+    pathname.startsWith("/creating");
 
   return (
     <>
@@ -29,30 +42,55 @@ export default function Navbar() {
 
           {/* Desktop nav links */}
           <div className="hidden items-center gap-8 md:flex">
-            <a
-              href="#features"
-              className="text-sm font-medium text-gray-600 hover:text-gray-900 transition"
-            >
-              Features
-            </a>
-            <a
-              href="#how-it-works"
-              className="text-sm font-medium text-gray-600 hover:text-gray-900 transition"
-            >
-              How It Works
-            </a>
-            <Link
-              href="/discover"
-              className="text-sm font-medium text-gray-600 hover:text-gray-900 transition"
-            >
-              Discover
-            </Link>
-            <a
-              href="#mobile"
-              className="text-sm font-medium text-gray-600 hover:text-gray-900 transition"
-            >
-              Mobile App
-            </a>
+            {isAppPage ? (
+              <>
+                <Link
+                  href="/dashboard"
+                  className={`text-sm font-medium transition ${pathname === "/dashboard" ? "text-teal-600" : "text-gray-600 hover:text-gray-900"}`}
+                >
+                  Dashboard
+                </Link>
+                <Link
+                  href="/trip"
+                  className={`text-sm font-medium transition ${pathname.startsWith("/trip") ? "text-teal-600" : "text-gray-600 hover:text-gray-900"}`}
+                >
+                  My Trips
+                </Link>
+                <Link
+                  href="/discover"
+                  className={`text-sm font-medium transition ${pathname.startsWith("/discover") ? "text-teal-600" : "text-gray-600 hover:text-gray-900"}`}
+                >
+                  Discover
+                </Link>
+              </>
+            ) : (
+              <>
+                <a
+                  href="#features"
+                  className="text-sm font-medium text-gray-600 hover:text-gray-900 transition"
+                >
+                  Features
+                </a>
+                <a
+                  href="#how-it-works"
+                  className="text-sm font-medium text-gray-600 hover:text-gray-900 transition"
+                >
+                  How It Works
+                </a>
+                <Link
+                  href="/discover"
+                  className="text-sm font-medium text-gray-600 hover:text-gray-900 transition"
+                >
+                  Discover
+                </Link>
+                <a
+                  href="#mobile"
+                  className="text-sm font-medium text-gray-600 hover:text-gray-900 transition"
+                >
+                  Mobile App
+                </a>
+              </>
+            )}
           </div>
 
           {/* Right side */}
@@ -127,18 +165,20 @@ export default function Navbar() {
                     >
                       ⚙️ Settings
                     </Link>
-                    <a
+                    <Link
                       href="/dashboard"
+                      onClick={() => setMenuOpen(false)}
                       className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                     >
-                      Dashboard
-                    </a>
-                    <a
-                      href="/trips"
+                      🏠 Dashboard
+                    </Link>
+                    <Link
+                      href="/trip"
+                      onClick={() => setMenuOpen(false)}
                       className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                     >
-                      My Trips
-                    </a>
+                      🗺️ My Trips
+                    </Link>
                     <hr className="my-1 border-gray-100" />
                     <button
                       onClick={() => {

@@ -2,24 +2,37 @@
 
 import { Trip, ItineraryDay } from "@/src/supabase/types";
 import Image from "next/image";
-import Chip from "@mui/material/Chip";
 import CalendarTodayIcon from "@mui/icons-material/CalendarToday";
 import MapIcon from "@mui/icons-material/Map";
+import CollaboratorAvatarGroup from "@/src/components/trip/CollaboratorAvatarGroup";
+import type { AvatarConfig } from "@/src/components/avatar/avatarTypes";
 
 export type TripDayPlanSummary = Pick<
   ItineraryDay,
   "id" | "title" | "date" | "city"
 >;
-export type TripWithDayPlans = Trip & { day_plans?: TripDayPlanSummary[] };
 
-const STATUS_STYLES: Record<
-  string,
-  { label: string; color: "success" | "warning" | "default" | "info" }
-> = {
-  active: { label: "Active", color: "success" },
-  planning: { label: "Planning", color: "info" },
-  completed: { label: "Completed", color: "default" },
-  cancelled: { label: "Cancelled", color: "warning" },
+export interface TripCollaboratorSummary {
+  user_id: string;
+  role: string;
+  full_name?: string | null;
+  avatar_url?: string | null;
+  avatar_config?: AvatarConfig | null;
+}
+
+export type TripWithDayPlans = Trip & {
+  day_plans?: TripDayPlanSummary[];
+  /** Role of the current user on this trip (admin = owner) */
+  collaborator_role?: string;
+  /** All members on this trip */
+  collaborators?: TripCollaboratorSummary[];
+};
+
+const STATUS_STYLES: Record<string, { label: string; dot: string }> = {
+  active: { label: "Active", dot: "#10b981" },
+  planning: { label: "Planning", dot: "#3b82f6" },
+  completed: { label: "Completed", dot: "#9ca3af" },
+  cancelled: { label: "Cancelled", dot: "#f59e0b" },
 };
 
 function getDaysInRange(start: string, end: string): string[] {
@@ -41,7 +54,7 @@ function formatShortDate(iso: string) {
 function TripCard({ trip }: { trip: TripWithDayPlans }) {
   const statusInfo = STATUS_STYLES[trip.status] ?? {
     label: trip.status,
-    color: "default" as const,
+    dot: "#9ca3af",
   };
   const dayPlanDates = new Set(
     (trip.day_plans ?? []).map((dp) => dp.date).filter(Boolean),
@@ -69,12 +82,12 @@ function TripCard({ trip }: { trip: TripWithDayPlans }) {
         {trip.image_url ? (
           <Image
             src={trip.image_url}
+            placeholder={trip.image_blurhash ? "blur" : undefined}
             blurDataURL={
               trip.image_blurhash
                 ? `data:image/jpeg;base64,${trip.image_blurhash}`
                 : undefined
             }
-            placeholder={trip.image_blurhash ? "blur" : undefined}
             alt={trip.title || "Trip cover"}
             fill
             className="object-cover"
@@ -86,16 +99,47 @@ function TripCard({ trip }: { trip: TripWithDayPlans }) {
           </div>
         )}
         <div className="absolute inset-0 bg-linear-to-t from-black/40 to-transparent" />
-        <div className="absolute bottom-2 left-3 right-3 flex items-end justify-between">
-          <h3 className="font-semibold text-white drop-shadow line-clamp-1 group-hover:text-teal-200 transition">
+        <div className="absolute bottom-2 left-3 right-3 flex items-end justify-between gap-2">
+          <h3 className="font-semibold text-white drop-shadow line-clamp-1 group-hover:text-teal-200 transition min-w-0">
             {trip.title}
           </h3>
-          <Chip
-            label={statusInfo.label}
-            color={statusInfo.color}
-            size="small"
-            sx={{ fontSize: "0.65rem", height: 20, fontWeight: 600 }}
-          />
+          <div className="flex items-center gap-1.5 shrink-0">
+            {trip.collaborator_role && (
+              <span
+                title={
+                  trip.collaborator_role === "admin"
+                    ? "Owner"
+                    : trip.collaborator_role === "editor"
+                      ? "Editor"
+                      : "Viewer"
+                }
+                style={{
+                  background:
+                    trip.collaborator_role === "admin"
+                      ? "rgba(139,92,246,0.9)"
+                      : trip.collaborator_role === "editor"
+                        ? "rgba(13,148,136,0.9)"
+                        : "rgba(99,102,241,0.9)",
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  display: "inline-block",
+                  boxShadow: "0 0 0 1.5px rgba(255,255,255,0.4)",
+                }}
+              />
+            )}
+            <span
+              title={statusInfo.label}
+              style={{
+                background: statusInfo.dot,
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                display: "inline-block",
+                boxShadow: "0 0 0 1.5px rgba(255,255,255,0.4)",
+              }}
+            />
+          </div>
         </div>
       </div>
 
@@ -156,12 +200,25 @@ function TripCard({ trip }: { trip: TripWithDayPlans }) {
           </div>
         )}
 
-        {/* Day plans count */}
-        <div className="mt-auto flex items-center gap-1.5 pt-1 border-t border-gray-50">
+        {/* Day plans count + collaborator avatars */}
+        <div className="mt-auto flex items-center justify-between gap-2 pt-1 border-t border-gray-50">
           <span className="text-xs text-gray-500">
             {(trip.day_plans ?? []).length} day plan
             {(trip.day_plans ?? []).length !== 1 ? "s" : ""}
           </span>
+          {(trip.collaborators ?? []).length > 0 && (
+            <CollaboratorAvatarGroup
+              collaborators={(trip.collaborators ?? []).map((c) => ({
+                id: c.user_id,
+                full_name: c.full_name,
+                avatar_config: c.avatar_config,
+                role: c.role,
+              }))}
+              max={4}
+              size={22}
+              ringClass="border-white"
+            />
+          )}
         </div>
       </div>
     </a>

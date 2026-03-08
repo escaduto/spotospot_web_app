@@ -8,12 +8,16 @@ import type {
   TripCollaborator,
   TripDocuments,
   ItineraryDay,
+  ItineraryItem,
+  AvatarConfig,
 } from "@/src/supabase/types";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import AddDayModal from "@/src/components/trip/AddDayModal";
+import CollaboratorAvatarGroup from "@/src/components/trip/CollaboratorAvatarGroup";
+import TripInviteSearch from "@/src/components/trip/TripInviteSearch";
 
 const TripMiniMap = dynamic(() => import("@/src/components/trip/TripMiniMap"), {
   ssr: false,
@@ -36,6 +40,10 @@ import CircularProgress from "@mui/material/CircularProgress";
 import LocationOnIcon from "@mui/icons-material/LocationOn";
 import PeopleIcon from "@mui/icons-material/People";
 import DescriptionIcon from "@mui/icons-material/Description";
+import ViewModuleIcon from "@mui/icons-material/ViewModule";
+import CalendarViewDayIcon from "@mui/icons-material/CalendarViewDay";
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -156,7 +164,11 @@ export default function TripPage({
   const [trip, setTrip] = useState<Trip | null>(null);
   const [days, setDays] = useState<ItineraryDay[]>([]);
   const [collaborators, setCollaborators] = useState<
-    (TripCollaborator & { email?: string; full_name?: string })[]
+    (TripCollaborator & {
+      email?: string;
+      full_name?: string;
+      avatar_config?: AvatarConfig | null;
+    })[]
   >([]);
   const [documents, setDocuments] = useState<TripDocuments[]>([]);
   const [loading, setLoading] = useState(true);
@@ -164,11 +176,30 @@ export default function TripPage({
   const [scrollY, setScrollY] = useState(0);
   const [addDayOpen, setAddDayOpen] = useState(false);
 
+  // ── Days view toggle ───────────────────────────────────────────────────────
+  const [daysView, setDaysView] = useState<"card" | "calendar" | "map">("card");
+  const [dayItems, setDayItems] = useState<Record<string, ItineraryItem[]>>({});
+  const [loadingItems, setLoadingItems] = useState(false);
+
+  // ── Invitation token from URL ──────────────────────────────────────────────
+  const searchParams = useSearchParams();
+  const inviteToken = searchParams.get("token");
+  const [inviteBannerState, setInviteBannerState] = useState<
+    "idle" | "resolving" | "accepted" | "declined"
+  >("idle");
+  const [inviteBannerError, setInviteBannerError] = useState<string | null>(
+    null,
+  );
+
+  // My own pending collaborator row (accepted=false, for in-app invites)
+  const [myPendingCollab, setMyPendingCollab] = useState<
+    (TripCollaborator & { avatar_config?: AvatarConfig | null }) | null
+  >(null);
+
   // Section refs for anchor scroll
   const daysRef = useRef<HTMLElement>(null);
   const travellersRef = useRef<HTMLElement>(null);
   const docsRef = useRef<HTMLElement>(null);
-  const mapRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     const onScroll = () => setScrollY(window.scrollY);
@@ -184,8 +215,23 @@ export default function TripPage({
     } = await supabase.auth.getUser();
     setCurrentUserId(user?.id ?? null);
 
+    // For unauthenticated visitors with an invite token, load the trip via RPC
+    // so RLS doesn't block them. Everything else (days, collabs, docs) requires
+    // auth and will gracefully be empty for unauthed viewers.
+    const isAuthed = !!user;
+    const tokenForLoad =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("token")
+        : null;
+
     const [tripRes, daysRes, collabRes, docsRes] = await Promise.all([
-      supabase.from("trips").select("*").eq("id", tripId).single(),
+      isAuthed
+        ? supabase.from("trips").select("*").eq("id", tripId).single()
+        : tokenForLoad
+          ? supabase
+              .rpc("get_trip_by_invite_token", { p_invite_token: tokenForLoad })
+              .single()
+          : { data: null, error: new Error("Not authenticated") },
       supabase
         .from("itinerary_days")
         .select("*")
@@ -193,8 +239,11 @@ export default function TripPage({
         .order("date", { ascending: true }),
       supabase
         .from("trip_collaborators")
-        .select("*, profiles(email, full_name)")
-        .eq("trip_id", tripId),
+        .select(
+          "id, trip_id, user_id, role, accepted, declined, invited_by, created_at, email, profiles!trip_collaborators_user_id_fkey(email, full_name, avatar_config)",
+        )
+        .eq("trip_id", tripId)
+        .eq("declined", false),
       supabase
         .from("trip_documents")
         .select("*")
@@ -202,20 +251,40 @@ export default function TripPage({
         .order("created_at", { ascending: false }),
     ]);
 
+    console.log(collabRes.data);
+
     if (tripRes.data) setTrip(tripRes.data as Trip);
     if (daysRes.data) setDays(daysRes.data as ItineraryDay[]);
     if (collabRes.data) {
-      setCollaborators(
-        (
-          collabRes.data as (TripCollaborator & {
-            profiles?: { email?: string; full_name?: string } | null;
-          })[]
-        ).map((c) => ({
-          ...c,
-          email: c.profiles?.email,
-          full_name: c.profiles?.full_name,
-        })),
-      );
+      type RawCollab = TripCollaborator & {
+        email?: string | null; // direct column on trip_collaborators (email-only invites)
+        profiles?: {
+          email?: string;
+          full_name?: string;
+          avatar_config?: AvatarConfig | null;
+        } | null;
+      };
+      const mapped = (collabRes.data as RawCollab[]).map((c) => ({
+        ...c,
+        // prefer profile email, fall back to the invite email stored on the collab row
+        email: c.profiles?.email ?? c.email ?? undefined,
+        full_name: c.profiles?.full_name,
+        avatar_config: c.profiles?.avatar_config ?? null,
+      }));
+      setCollaborators(mapped);
+
+      // Detect current user's own pending invitation (accepted=false, not owner)
+      const uid = user?.id ?? null;
+      if (uid) {
+        const pending = mapped.find(
+          (c) =>
+            c.user_id === uid &&
+            !c.accepted &&
+            c.role !== "owner" &&
+            c.role !== "admin",
+        );
+        setMyPendingCollab(pending ?? null);
+      }
     }
     if (docsRes.data) setDocuments(docsRes.data as TripDocuments[]);
     setLoading(false);
@@ -224,6 +293,36 @@ export default function TripPage({
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
+
+  // ── Fetch itinerary items (for calendar view) ──────────────────────────────
+
+  const fetchDayItems = useCallback(async () => {
+    if (days.length === 0) return;
+    setLoadingItems(true);
+    const dayIds = days.map((d) => d.id);
+    const { data } = await supabase
+      .from("itinerary_items")
+      .select("*")
+      .in("itinerary_day_id", dayIds)
+      .order("order_index", { ascending: true });
+    if (data) {
+      const grouped: Record<string, ItineraryItem[]> = {};
+      (data as ItineraryItem[]).forEach((item) => {
+        if (!grouped[item.itinerary_day_id])
+          grouped[item.itinerary_day_id] = [];
+        grouped[item.itinerary_day_id].push(item);
+      });
+      setDayItems(grouped);
+    }
+    setLoadingItems(false);
+  }, [supabase, days]);
+
+  // Fetch items when switching to calendar view
+  useEffect(() => {
+    if (daysView === "calendar" && Object.keys(dayItems).length === 0) {
+      fetchDayItems();
+    }
+  }, [daysView, dayItems, fetchDayItems]);
 
   // ── Trip field save helpers ────────────────────────────────────────────────
 
@@ -267,49 +366,60 @@ export default function TripPage({
     setEditingDates(false);
   };
 
-  // ── Collaborator invite ────────────────────────────────────────────────────
-
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<"editor" | "viewer">("editor");
-  const [inviteLoading, setInviteLoading] = useState(false);
-  const [inviteError, setInviteError] = useState<string | null>(null);
-
-  const handleInvite = async () => {
-    if (!inviteEmail.trim()) return;
-    setInviteLoading(true);
-    setInviteError(null);
-    try {
-      // Look up user by email
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("email", inviteEmail.trim().toLowerCase())
-        .single();
-      if (!profile) {
-        setInviteError("No user found with that email.");
-        return;
-      }
-      const { error } = await supabase.from("trip_collaborators").insert({
-        trip_id: tripId,
-        user_id: profile.id,
-        role: inviteRole,
-        invited_by: currentUserId!,
-        accepted: false,
-      });
-      if (error) throw error;
-      setInviteEmail("");
-      fetchAll();
-    } catch (err) {
-      setInviteError(err instanceof Error ? err.message : "Invite failed");
-    } finally {
-      setInviteLoading(false);
-    }
-  };
+  // ── Collaborator invite — handled by TripInviteSearch ─────────────────────
 
   const handleRemoveCollaborator = async (collabId: string) => {
     if (!confirm("Remove this collaborator?")) return;
     await supabase.from("trip_collaborators").delete().eq("id", collabId);
     fetchAll();
+  };
+
+  // ── Accept / Decline invitation ────────────────────────────────────────────
+
+  const handleAcceptInvite = async (
+    token?: string | null,
+    collabId?: string | null,
+  ) => {
+    setInviteBannerState("resolving");
+    setInviteBannerError(null);
+    try {
+      const { error } = await supabase.rpc("accept_trip_invitation", {
+        ...(token ? { p_invite_token: token } : {}),
+        ...(collabId ? { p_collaborator_id: collabId } : {}),
+      });
+      if (error) throw error;
+      setInviteBannerState("accepted");
+      setMyPendingCollab(null);
+      fetchAll();
+    } catch (err) {
+      setInviteBannerError(
+        err instanceof Error ? err.message : "Could not accept invitation",
+      );
+      setInviteBannerState("idle");
+    }
+  };
+
+  const handleDeclineInvite = async (
+    token?: string | null,
+    collabId?: string | null,
+  ) => {
+    setInviteBannerState("resolving");
+    setInviteBannerError(null);
+    try {
+      const { error } = await supabase.rpc("decline_trip_invitation", {
+        ...(token ? { p_invite_token: token } : {}),
+        ...(collabId ? { p_collaborator_id: collabId } : {}),
+      });
+      if (error) throw error;
+      setInviteBannerState("declined");
+      setMyPendingCollab(null);
+      fetchAll();
+    } catch (err) {
+      setInviteBannerError(
+        err instanceof Error ? err.message : "Could not decline invitation",
+      );
+      setInviteBannerState("idle");
+    }
   };
 
   // ── Document upload ────────────────────────────────────────────────────────
@@ -384,6 +494,13 @@ export default function TripPage({
   }
 
   const isOwner = trip.owner_id === currentUserId;
+  const isEditor =
+    isOwner ||
+    collaborators.some(
+      (c) =>
+        c.user_id === currentUserId &&
+        (c.role === "editor" || c.role === "owner" || c.role === "admin"),
+    );
   const heroBlur = Math.min(scrollY / 60, 10);
   const heroScale = 1 + scrollY * 0.0003;
   const showNav = scrollY > 320;
@@ -394,7 +511,7 @@ export default function TripPage({
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
-      <div className="relative h-[75vh] w-full overflow-hidden bg-gray-900">
+      <div className="relative h-[40vh] w-full overflow-hidden bg-gray-900">
         {/* Blurring / parallax image */}
         {trip.image_url && (
           <div
@@ -420,9 +537,9 @@ export default function TripPage({
             />
           </div>
         )}
-        {/* Gradient overlay */}
-        <div className="absolute inset-0 bg-linear-to-t from-gray-950 via-gray-950/50 to-transparent" />
-        <div className="absolute inset-0 bg-linear-to-r from-gray-950/40 via-transparent to-transparent" />
+        {/* Gradient overlay — stronger for legibility */}
+        <div className="absolute inset-0 bg-linear-to-t from-gray-950 via-gray-950/60 to-gray-950/10" />
+        <div className="absolute inset-0 bg-linear-to-r from-gray-950/60 via-transparent to-transparent" />
 
         {/* Back button */}
         <button
@@ -434,153 +551,158 @@ export default function TripPage({
         </button>
 
         {/* Hero content */}
-        <div className="absolute bottom-0 left-0 right-0 px-6 pb-12 max-w-5xl">
-          {/* Status + visibility badges */}
-          <div className="flex items-center gap-2 mb-3">
-            <span
-              className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
-                trip.status === "active"
-                  ? "bg-green-500/20 text-green-300 border border-green-500/30"
-                  : trip.status === "planning"
-                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                    : trip.status === "completed"
-                      ? "bg-sky-500/20 text-sky-300 border border-sky-500/30"
-                      : "bg-gray-500/20 text-gray-400 border border-gray-500/30"
-              }`}
-            >
-              {trip.status.charAt(0).toUpperCase() + trip.status.slice(1)}
-            </span>
-            <span className="text-[11px] text-white/40 border border-white/10 px-2 py-0.5 rounded-full">
-              {trip.visibility}
-            </span>
-          </div>
-
-          {/* Title */}
-          <h1 className="text-3xl sm:text-5xl font-extrabold text-white leading-tight mb-2">
-            {isOwner ? (
-              <InlineEdit
-                value={trip.title}
-                onSave={(v) => saveField("title", v)}
-                label="title"
-                className="text-white"
-              />
-            ) : (
-              trip.title
-            )}
-          </h1>
-
-          {/* Destination */}
-          <div className="flex items-center gap-1.5 text-white/60 text-sm mb-2">
-            <LocationOnIcon style={{ fontSize: 15 }} />
-            {isOwner ? (
-              <InlineEdit
-                value={trip.destination}
-                onSave={(v) => saveField("destination", v)}
-                label="destination"
-                className="text-white/60"
-              />
-            ) : (
-              (trip.destination ?? (
-                <span className="italic">No destination set</span>
-              ))
-            )}
-          </div>
-
-          {/* Description */}
-          <p className="text-white/60 text-sm max-w-xl leading-relaxed mb-4">
-            {isOwner ? (
-              <InlineEdit
-                value={trip.description}
-                onSave={(v) => saveField("description", v)}
-                label="description"
-                multiline
-                className="text-white/60"
-              />
-            ) : (
-              trip.description
-            )}
-          </p>
-
-          {/* Dates */}
-          <div className="flex items-center gap-2 text-sm text-white/50 mb-5">
-            <CalendarTodayIcon style={{ fontSize: 14 }} />
-            {editingDates ? (
-              <span className="flex items-center gap-2">
-                <input
-                  type="date"
-                  value={draftStart}
-                  onChange={(e) => setDraftStart(e.target.value)}
-                  className="bg-white/10 border border-white/20 text-white text-sm rounded px-2 py-0.5 focus:outline-none focus:border-teal-400"
-                />
-                <span className="text-white/30">→</span>
-                <input
-                  type="date"
-                  value={draftEnd}
-                  onChange={(e) => setDraftEnd(e.target.value)}
-                  className="bg-white/10 border border-white/20 text-white text-sm rounded px-2 py-0.5 focus:outline-none focus:border-teal-400"
-                />
-                <button
-                  onClick={saveDates}
-                  disabled={datesSaving}
-                  className="text-teal-400 hover:text-teal-300 disabled:opacity-40"
-                >
-                  <CheckIcon style={{ fontSize: 16 }} />
-                </button>
-                <button
-                  onClick={() => setEditingDates(false)}
-                  className="text-white/40 hover:text-white/70"
-                >
-                  <CloseIcon style={{ fontSize: 16 }} />
-                </button>
-              </span>
-            ) : (
+        <div className="absolute bottom-0 left-0 right-0 px-6 pb-10 max-w-5xl">
+          {/* Frosted glass panel for readability */}
+          <div className="relative rounded-2xl p-5 bg-gray-950/50 backdrop-blur-sm border border-white/5 shadow-2xl">
+            {/* Status + visibility badges */}
+            <div className="flex items-center gap-2 mb-3">
               <span
-                className="flex items-center gap-1 cursor-pointer hover:text-white/80 group transition"
-                onClick={isOwner ? openDateEdit : undefined}
+                className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                  trip.status === "active"
+                    ? "bg-green-500/25 text-green-300 border border-green-500/40"
+                    : trip.status === "planning"
+                      ? "bg-amber-500/25 text-amber-300 border border-amber-500/40"
+                      : trip.status === "completed"
+                        ? "bg-sky-500/25 text-sky-300 border border-sky-500/40"
+                        : "bg-gray-500/25 text-gray-400 border border-gray-500/40"
+                }`}
               >
-                {trip.start_date || trip.end_date ? (
-                  <>
-                    {formatDate(trip.start_date)}
-                    {trip.end_date && ` → ${formatDate(trip.end_date)}`}
-                  </>
-                ) : (
-                  <span className="italic text-white/30">Add dates</span>
-                )}
-                {isOwner && (
-                  <EditIcon
-                    style={{ fontSize: 11 }}
-                    className="opacity-0 group-hover:opacity-60 transition"
-                  />
-                )}
+                {trip.status.charAt(0).toUpperCase() + trip.status.slice(1)}
               </span>
-            )}
-          </div>
-
-          {/* Collaborator avatars */}
-          {collaborators.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              <div className="flex -space-x-2">
-                {collaborators.slice(0, 5).map((c) => (
-                  <div
-                    key={c.id}
-                    title={c.full_name ?? c.email ?? ""}
-                    className="w-8 h-8 rounded-full border-2 border-gray-950 bg-teal-700 flex items-center justify-center text-white text-xs font-bold overflow-hidden shrink-0"
-                  >
-                    {(c.full_name ?? c.email ?? "?").charAt(0).toUpperCase()}
-                  </div>
-                ))}
-              </div>
-              {collaborators.length > 5 && (
-                <span className="text-xs text-white/40 ml-1">
-                  +{collaborators.length - 5} more
-                </span>
-              )}
-              <span className="text-xs text-white/40 ml-1">
-                {collaborators.length} traveller
-                {collaborators.length !== 1 ? "s" : ""}
+              <span className="text-[11px] text-white/50 border border-white/15 px-2 py-0.5 rounded-full">
+                {trip.visibility}
               </span>
             </div>
-          )}
+
+            {/* Title */}
+            <h1
+              className="text-3xl sm:text-4xl font-extrabold text-white leading-tight mb-2"
+              style={{ textShadow: "0 2px 12px rgba(0,0,0,0.6)" }}
+            >
+              {isOwner ? (
+                <InlineEdit
+                  value={trip.title}
+                  onSave={(v) => saveField("title", v)}
+                  label="title"
+                  className="text-white"
+                />
+              ) : (
+                trip.title
+              )}
+            </h1>
+
+            {/* Destination */}
+            <div className="flex items-center gap-1.5 text-white/75 text-sm mb-2">
+              <LocationOnIcon
+                style={{ fontSize: 15 }}
+                className="text-teal-400 shrink-0"
+              />
+              {isOwner ? (
+                <InlineEdit
+                  value={trip.destination}
+                  onSave={(v) => saveField("destination", v)}
+                  label="destination"
+                  className="text-white/75"
+                />
+              ) : (
+                (trip.destination ?? (
+                  <span className="italic text-white/40">
+                    No destination set
+                  </span>
+                ))
+              )}
+            </div>
+
+            {/* Description */}
+            {(trip.description || isOwner) && (
+              <p className="text-white/70 text-sm max-w-xl leading-relaxed mb-4">
+                {isOwner ? (
+                  <InlineEdit
+                    value={trip.description}
+                    onSave={(v) => saveField("description", v)}
+                    label="description"
+                    multiline
+                    className="text-white/70"
+                  />
+                ) : (
+                  trip.description
+                )}
+              </p>
+            )}
+
+            {/* Dates */}
+            <div className="flex items-center gap-2 text-sm text-white/60 mb-5">
+              <CalendarTodayIcon
+                style={{ fontSize: 14 }}
+                className="text-teal-400 shrink-0"
+              />
+              {editingDates ? (
+                <span className="flex items-center gap-2 flex-wrap">
+                  <input
+                    type="date"
+                    value={draftStart}
+                    onChange={(e) => setDraftStart(e.target.value)}
+                    className="bg-white/10 border border-white/25 text-white text-sm rounded px-2 py-0.5 focus:outline-none focus:border-teal-400"
+                  />
+                  <span className="text-white/30">→</span>
+                  <input
+                    type="date"
+                    value={draftEnd}
+                    onChange={(e) => setDraftEnd(e.target.value)}
+                    className="bg-white/10 border border-white/25 text-white text-sm rounded px-2 py-0.5 focus:outline-none focus:border-teal-400"
+                  />
+                  <button
+                    onClick={saveDates}
+                    disabled={datesSaving}
+                    className="text-teal-400 hover:text-teal-300 disabled:opacity-40"
+                  >
+                    <CheckIcon style={{ fontSize: 16 }} />
+                  </button>
+                  <button
+                    onClick={() => setEditingDates(false)}
+                    className="text-white/40 hover:text-white/70"
+                  >
+                    <CloseIcon style={{ fontSize: 16 }} />
+                  </button>
+                </span>
+              ) : (
+                <span
+                  className="flex items-center gap-1.5 cursor-pointer hover:text-white/90 group transition font-medium"
+                  onClick={isOwner ? openDateEdit : undefined}
+                >
+                  {trip.start_date || trip.end_date ? (
+                    <>
+                      {formatDate(trip.start_date)}
+                      {trip.end_date && (
+                        <span className="text-white/40 mx-0.5">→</span>
+                      )}
+                      {trip.end_date && formatDate(trip.end_date)}
+                    </>
+                  ) : (
+                    <span className="italic text-white/35">Add dates</span>
+                  )}
+                  {isOwner && (
+                    <EditIcon
+                      style={{ fontSize: 11 }}
+                      className="opacity-0 group-hover:opacity-60 transition"
+                    />
+                  )}
+                </span>
+              )}
+            </div>
+
+            {/* Collaborator avatar group */}
+            {collaborators.length > 0 && (
+              <CollaboratorAvatarGroup
+                collaborators={collaborators}
+                max={4}
+                size={34}
+                ringClass="border-gray-950"
+                showLabel
+              />
+            )}
+          </div>
+          {/* end frosted glass panel */}
         </div>
       </div>
 
@@ -596,7 +718,7 @@ export default function TripPage({
           {(
             [
               {
-                label: "Days",
+                label: "Trip Plan",
                 ref: daysRef,
                 icon: <MapIcon style={{ fontSize: 15 }} />,
               },
@@ -609,11 +731,6 @@ export default function TripPage({
                 label: "Documents",
                 ref: docsRef,
                 icon: <DescriptionIcon style={{ fontSize: 15 }} />,
-              },
-              {
-                label: "Map",
-                ref: mapRef,
-                icon: <LocationOnIcon style={{ fontSize: 15 }} />,
               },
             ] as const
           ).map(({ label, ref, icon }) => (
@@ -631,25 +748,133 @@ export default function TripPage({
         </div>
       </nav>
 
+      {/* ── Invitation banner (token via URL or pending in-app invite) ──────── */}
+      {(() => {
+        const hasToken = !!inviteToken;
+        const hasPending = !!myPendingCollab;
+        if (!hasToken && !hasPending) return null;
+        if (inviteBannerState === "accepted") {
+          return (
+            <div className="bg-teal-900/80 border-b border-teal-700 px-5 py-3 text-center text-sm text-teal-200 font-medium">
+              ✓ You&apos;ve joined this trip!
+            </div>
+          );
+        }
+        if (inviteBannerState === "declined") {
+          return (
+            <div className="bg-gray-800/80 border-b border-gray-700 px-5 py-3 text-center text-sm text-gray-400">
+              Invitation declined.
+            </div>
+          );
+        }
+        return (
+          <div className="bg-indigo-950/90 border-b border-indigo-700/60 backdrop-blur-sm px-5 py-3.5">
+            <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-start sm:items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-white">
+                  You&apos;ve been invited to join this trip
+                  {myPendingCollab?.role && (
+                    <span className="ml-1.5 text-indigo-300 font-normal">
+                      as{" "}
+                      <span className="font-semibold capitalize">
+                        {myPendingCollab.role}
+                      </span>
+                    </span>
+                  )}
+                </p>
+                {inviteBannerError && (
+                  <p className="text-xs text-red-400 mt-0.5">
+                    {inviteBannerError}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() =>
+                    handleAcceptInvite(
+                      hasToken ? inviteToken : null,
+                      hasPending ? myPendingCollab!.id : null,
+                    )
+                  }
+                  disabled={inviteBannerState === "resolving"}
+                  className="flex items-center gap-1.5 px-4 py-1.5 text-sm font-semibold bg-teal-600 hover:bg-teal-500 text-white rounded-lg transition disabled:opacity-50"
+                >
+                  {inviteBannerState === "resolving" ? (
+                    <CircularProgress size={12} color="inherit" />
+                  ) : (
+                    <CheckIcon style={{ fontSize: 14 }} />
+                  )}
+                  Accept
+                </button>
+                <button
+                  onClick={() =>
+                    handleDeclineInvite(
+                      hasToken ? inviteToken : null,
+                      hasPending ? myPendingCollab!.id : null,
+                    )
+                  }
+                  disabled={inviteBannerState === "resolving"}
+                  className="flex items-center gap-1.5 px-4 py-1.5 text-sm font-semibold bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition disabled:opacity-50"
+                >
+                  <CloseIcon style={{ fontSize: 14 }} />
+                  Decline
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="max-w-5xl mx-auto px-5 pb-32">
         {/* ── Days ──────────────────────────────────────────────────────── */}
         <section ref={daysRef} className="pt-14 scroll-mt-20">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-5">
             <div>
               <h2 className="text-xl font-bold text-white">Days</h2>
               <p className="text-sm text-gray-500 mt-0.5">
                 {days.length} day{days.length !== 1 ? "s" : ""} planned
               </p>
             </div>
-            {isOwner && (
-              <button
-                onClick={() => setAddDayOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-500 text-white rounded-xl transition"
-              >
-                <AddIcon style={{ fontSize: 16 }} />
-                Add Day
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {/* View toggle */}
+              {days.length > 0 && (
+                <div className="flex items-center bg-gray-900 border border-white/10 rounded-xl p-1 gap-0.5">
+                  <button
+                    onClick={() => setDaysView("card")}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${daysView === "card" ? "bg-teal-600 text-white" : "text-gray-400 hover:text-white"}`}
+                    title="Card view"
+                  >
+                    <ViewModuleIcon style={{ fontSize: 15 }} />
+                    Cards
+                  </button>
+                  <button
+                    onClick={() => setDaysView("calendar")}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${daysView === "calendar" ? "bg-teal-600 text-white" : "text-gray-400 hover:text-white"}`}
+                    title="Schedule view"
+                  >
+                    <CalendarViewDayIcon style={{ fontSize: 15 }} />
+                    Schedule
+                  </button>
+                  <button
+                    onClick={() => setDaysView("map")}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${daysView === "map" ? "bg-teal-600 text-white" : "text-gray-400 hover:text-white"}`}
+                    title="Map view"
+                  >
+                    <MapIcon style={{ fontSize: 15 }} />
+                    Map
+                  </button>
+                </div>
+              )}
+              {isOwner && (
+                <button
+                  onClick={() => setAddDayOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-500 text-white rounded-xl transition"
+                >
+                  <AddIcon style={{ fontSize: 16 }} />
+                  Add Day
+                </button>
+              )}
+            </div>
           </div>
 
           {days.length === 0 ? (
@@ -666,86 +891,99 @@ export default function TripPage({
                 </button>
               )}
             </div>
-          ) : (
+          ) : daysView === "card" ? (
+            /* ── Card grid view ─────────────────────────────────────────── */
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {days.map((day, idx) => (
-                <Link
+                <div
                   key={day.id}
-                  href={`/day/${day.id}`}
-                  className="group relative rounded-2xl overflow-hidden bg-gray-900 border border-white/5 hover:border-teal-500/40 shadow-lg hover:shadow-teal-900/30 transition-all duration-300 aspect-4/3 block"
+                  className="group relative flex flex-col rounded-2xl overflow-hidden bg-gray-900 border border-white/5 hover:border-teal-500/40 shadow-lg hover:shadow-teal-900/30 transition-all duration-300"
                 >
-                  {/* Background image */}
-                  {day.image_url ? (
-                    <Image
-                      src={day.image_url}
-                      alt={day.title ?? `Day ${idx + 1}`}
-                      fill
-                      className="object-cover group-hover:scale-105 transition-transform duration-500"
-                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                      placeholder={day.image_blurhash ? "blur" : undefined}
-                      blurDataURL={
-                        day.image_blurhash
-                          ? `data:image/jpeg;base64,${day.image_blurhash}`
-                          : undefined
-                      }
-                    />
-                  ) : (
-                    <div className="absolute inset-0 bg-linear-to-br from-gray-800 to-gray-900 flex items-center justify-center">
-                      <MapIcon
-                        style={{ fontSize: 40 }}
-                        className="text-gray-700"
-                      />
-                    </div>
-                  )}
-                  {/* Overlay */}
-                  <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/20 to-transparent" />
-                  {/* Day badge */}
-                  <div className="absolute top-3 left-3 bg-teal-600/90 backdrop-blur-sm text-white text-[11px] font-bold px-2 py-0.5 rounded-full">
-                    Day {idx + 1}
-                  </div>
-                  {/* Visibility */}
-                  <div
-                    className={`absolute top-3 right-3 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                      day.visibility === "public"
-                        ? "bg-green-500/20 text-green-300 border border-green-500/30"
-                        : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                    }`}
+                  <Link
+                    href={`/day/${day.id}`}
+                    className="relative block aspect-4/3"
                   >
-                    {day.visibility === "public" ? "Public" : "Draft"}
-                  </div>
-                  {/* Content */}
-                  <div className="absolute bottom-0 left-0 right-0 p-3">
-                    {day.date && (
-                      <p className="text-white/50 text-[11px] mb-0.5">
-                        {new Date(day.date).toLocaleDateString("en-US", {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </p>
-                    )}
-                    <p className="font-bold text-white text-sm leading-snug truncate">
-                      {day.title ?? "Untitled day"}
-                    </p>
-                    {(day.city || day.country) && (
-                      <p className="text-white/50 text-xs mt-0.5 truncate">
-                        {[day.city, day.country].filter(Boolean).join(", ")}
-                      </p>
-                    )}
-                    {day.category_type && day.category_type.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {day.category_type.slice(0, 2).map((c) => (
-                          <span
-                            key={c}
-                            className="text-[10px] bg-white/10 text-white/70 rounded-full px-1.5 py-0.5 capitalize"
-                          >
-                            {c.replace(/_/g, " ")}
-                          </span>
-                        ))}
+                    {/* Background image */}
+                    {day.image_url ? (
+                      <Image
+                        src={day.image_url}
+                        alt={day.title ?? `Day ${idx + 1}`}
+                        fill
+                        className="object-cover group-hover:scale-105 transition-transform duration-500"
+                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                        placeholder={day.image_blurhash ? "blur" : undefined}
+                        blurDataURL={
+                          day.image_blurhash
+                            ? `data:image/jpeg;base64,${day.image_blurhash}`
+                            : undefined
+                        }
+                      />
+                    ) : (
+                      <div className="absolute inset-0 bg-linear-to-br from-gray-800 to-gray-900 flex items-center justify-center">
+                        <MapIcon
+                          style={{ fontSize: 40 }}
+                          className="text-gray-700"
+                        />
                       </div>
                     )}
-                  </div>
-                </Link>
+                    {/* Overlay */}
+                    <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/20 to-transparent" />
+                    {/* Day badge */}
+                    <div className="absolute top-3 left-3 bg-teal-600/90 backdrop-blur-sm text-white text-[11px] font-bold px-2 py-0.5 rounded-full">
+                      Day {idx + 1}
+                    </div>
+                    {/* Visibility */}
+                    <div
+                      className={`absolute top-3 right-3 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                        day.visibility === "public"
+                          ? "bg-green-500/20 text-green-300 border border-green-500/30"
+                          : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                      }`}
+                    >
+                      {day.visibility === "public" ? "Public" : "Draft"}
+                    </div>
+                    {/* Content */}
+                    <div className="absolute bottom-0 left-0 right-0 p-3">
+                      {day.date && (
+                        <p className="text-white/50 text-[11px] mb-0.5">
+                          {new Date(day.date).toLocaleDateString("en-US", {
+                            weekday: "short",
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </p>
+                      )}
+                      <p className="font-bold text-white text-sm leading-snug truncate">
+                        {day.title ?? "Untitled day"}
+                      </p>
+                      {(day.city || day.country) && (
+                        <p className="text-white/50 text-xs mt-0.5 truncate">
+                          {[day.city, day.country].filter(Boolean).join(", ")}
+                        </p>
+                      )}
+                      {day.category_type && day.category_type.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {day.category_type.slice(0, 2).map((c) => (
+                            <span
+                              key={c}
+                              className="text-[10px] bg-white/10 text-white/70 rounded-full px-1.5 py-0.5 capitalize"
+                            >
+                              {c.replace(/_/g, " ")}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </Link>
+                  {/* View full plan footer */}
+                  <Link
+                    href={`/day/${day.id}`}
+                    className="flex items-center justify-center gap-1 py-2 text-xs font-semibold text-teal-400 hover:text-teal-300 hover:bg-teal-950/60 transition border-t border-white/5"
+                  >
+                    View full plan
+                    <ArrowForwardIcon style={{ fontSize: 13 }} />
+                  </Link>
+                </div>
               ))}
               {/* Add day card */}
               {isOwner && (
@@ -764,6 +1002,142 @@ export default function TripPage({
                   </span>
                 </button>
               )}
+            </div>
+          ) : daysView === "calendar" ? (
+            /* ── Schedule / Calendar view ───────────────────────────────── */
+            <div className="flex flex-col gap-4">
+              {loadingItems ? (
+                <div className="flex items-center justify-center py-12">
+                  <CircularProgress size={28} sx={{ color: "#0d9488" }} />
+                  <span className="ml-3 text-sm text-gray-500">
+                    Loading schedule…
+                  </span>
+                </div>
+              ) : (
+                days.map((day, idx) => {
+                  const items = dayItems[day.id] ?? [];
+                  return (
+                    <div
+                      key={day.id}
+                      className="rounded-2xl bg-gray-900 border border-white/5 overflow-hidden"
+                    >
+                      {/* Day header */}
+                      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-teal-600/80 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                            {idx + 1}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-white text-sm leading-tight">
+                              {day.title ?? `Day ${idx + 1}`}
+                            </p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {day.date && (
+                                <span className="text-[11px] text-gray-400">
+                                  {new Date(day.date).toLocaleDateString(
+                                    "en-US",
+                                    {
+                                      weekday: "short",
+                                      month: "short",
+                                      day: "numeric",
+                                    },
+                                  )}
+                                </span>
+                              )}
+                              {(day.city || day.country) && (
+                                <span className="text-[11px] text-gray-500 truncate">
+                                  📍{" "}
+                                  {[day.city, day.country]
+                                    .filter(Boolean)
+                                    .join(", ")}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <Link
+                          href={`/day/${day.id}`}
+                          className="flex items-center gap-1 text-xs text-teal-400 hover:text-teal-300 font-medium transition shrink-0"
+                        >
+                          View full plan
+                          <ArrowForwardIcon style={{ fontSize: 13 }} />
+                        </Link>
+                      </div>
+
+                      {/* Activity list */}
+                      {items.length === 0 ? (
+                        <div className="px-4 py-5 text-sm text-gray-600 text-center">
+                          No activities added yet.
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-white/5">
+                          {items.map((item) => (
+                            <div
+                              key={item.id}
+                              className="flex items-start gap-3 px-4 py-3 hover:bg-white/2 transition"
+                            >
+                              {/* Time column */}
+                              <div className="w-16 shrink-0 text-right">
+                                {item.start_time ? (
+                                  <span className="text-[11px] text-teal-400 font-medium">
+                                    {item.start_time.slice(0, 5)}
+                                  </span>
+                                ) : (
+                                  <AccessTimeIcon
+                                    style={{ fontSize: 13 }}
+                                    className="text-gray-700 mt-0.5 ml-auto block"
+                                  />
+                                )}
+                                {item.end_time && (
+                                  <span className="text-[10px] text-gray-600 block">
+                                    – {item.end_time.slice(0, 5)}
+                                  </span>
+                                )}
+                              </div>
+                              {/* Dot connector */}
+                              <div className="flex flex-col items-center mt-1 shrink-0">
+                                <div className="w-2 h-2 rounded-full bg-teal-500" />
+                                <div className="w-px flex-1 bg-teal-900/60 min-h-4" />
+                              </div>
+                              {/* Item content */}
+                              <div className="flex-1 min-w-0 pb-1">
+                                <p className="text-sm font-semibold text-white leading-snug">
+                                  {item.title}
+                                </p>
+                                {item.location_name && (
+                                  <p className="text-xs text-gray-500 mt-0.5 truncate">
+                                    📍 {item.location_name}
+                                  </p>
+                                )}
+                                {item.description && (
+                                  <p className="text-xs text-gray-600 mt-0.5 line-clamp-2">
+                                    {item.description}
+                                  </p>
+                                )}
+                                {item.duration_minutes && (
+                                  <span className="inline-block mt-1 text-[10px] bg-white/5 text-gray-400 px-1.5 py-0.5 rounded-full">
+                                    {item.duration_minutes < 60
+                                      ? `${item.duration_minutes}min`
+                                      : `${Math.floor(item.duration_minutes / 60)}h${item.duration_minutes % 60 ? ` ${item.duration_minutes % 60}m` : ""}`}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          ) : (
+            /* ── Map view ───────────────────────────────────────────────── */
+            <div
+              className="rounded-2xl overflow-hidden border border-white/5 shadow-lg"
+              style={{ height: 480 }}
+            >
+              <TripMiniMap days={days} tripId={tripId} />
             </div>
           )}
         </section>
@@ -802,14 +1176,14 @@ export default function TripPage({
                   <div className="flex items-center justify-center gap-1 mt-1.5 flex-wrap">
                     <span
                       className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        c.role === "owner"
+                        c.role === "owner" || c.role === "admin"
                           ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
                           : c.role === "editor"
                             ? "bg-teal-500/20 text-teal-300 border border-teal-500/30"
                             : "bg-gray-700 text-gray-400"
                       }`}
                     >
-                      {c.role}
+                      {c.role === "admin" ? "owner" : c.role}
                     </span>
                     {!c.accepted && (
                       <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full">
@@ -818,7 +1192,7 @@ export default function TripPage({
                     )}
                   </div>
                 </div>
-                {isOwner && c.role !== "owner" && (
+                {isOwner && c.role !== "owner" && c.role !== "admin" && (
                   <button
                     onClick={() => handleRemoveCollaborator(c.id)}
                     className="absolute top-2 right-2 text-gray-700 hover:text-red-400 opacity-0 group-hover:opacity-100 transition"
@@ -830,52 +1204,22 @@ export default function TripPage({
             ))}
           </div>
 
-          {/* Invite form (owner only) */}
-          {isOwner && (
-            <div className="bg-gray-900 border border-white/5 rounded-2xl p-5">
-              <p className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                <PeopleIcon
-                  style={{ fontSize: 16 }}
-                  className="text-teal-400"
-                />
-                Invite someone
-              </p>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  type="email"
-                  placeholder="Email address"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleInvite()}
-                  className="flex-1 text-sm bg-gray-800 border border-gray-700 text-white placeholder:text-gray-500 rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500 transition"
-                />
-                <select
-                  value={inviteRole}
-                  onChange={(e) =>
-                    setInviteRole(e.target.value as "editor" | "viewer")
-                  }
-                  className="text-sm bg-gray-800 border border-gray-700 text-white rounded-xl px-3 py-2 focus:outline-none focus:border-teal-500"
-                >
-                  <option value="editor">Editor</option>
-                  <option value="viewer">Viewer</option>
-                </select>
-                <button
-                  onClick={handleInvite}
-                  disabled={inviteLoading || !inviteEmail.trim()}
-                  className="flex items-center gap-1.5 text-sm bg-teal-600 hover:bg-teal-500 text-white px-4 py-2 rounded-xl font-semibold transition disabled:opacity-40"
-                >
-                  {inviteLoading ? (
-                    <CircularProgress size={14} color="inherit" />
-                  ) : (
-                    <AddIcon style={{ fontSize: 15 }} />
-                  )}
-                  Invite
-                </button>
-              </div>
-              {inviteError && (
-                <p className="text-xs text-red-400 mt-2">{inviteError}</p>
-              )}
-            </div>
+          {/* Invite search (owner or editor) */}
+          {isEditor && currentUserId && (
+            <TripInviteSearch
+              tripId={tripId}
+              currentUserId={currentUserId}
+              excludeIds={collaborators.map((c) => c.user_id)}
+              existingMembers={collaborators.map((c) => ({
+                id: c.user_id,
+                full_name: c.full_name ?? null,
+                email: c.email ?? null,
+                avatar_config: c.avatar_config ?? null,
+                role: c.role,
+                accepted: c.accepted,
+              }))}
+              onInvited={fetchAll}
+            />
           )}
         </section>
 
@@ -991,24 +1335,6 @@ export default function TripPage({
             </div>
           )}
         </section>
-
-        {/* ── Map ───────────────────────────────────────────────────────── */}
-        {days.length > 0 && (
-          <section ref={mapRef} className="pt-16 scroll-mt-20">
-            <div className="mb-6">
-              <h2 className="text-xl font-bold text-white">Trip Map</h2>
-              <p className="text-sm text-gray-500 mt-0.5">
-                All {days.length} day{days.length !== 1 ? "s" : ""} on the map
-              </p>
-            </div>
-            <div
-              className="rounded-2xl overflow-hidden border border-white/5 shadow-xl"
-              style={{ height: 480 }}
-            >
-              <TripMiniMap days={days} tripId={tripId} />
-            </div>
-          </section>
-        )}
       </div>
 
       {/* ── Add Day Modal ────────────────────────────────────────────────── */}

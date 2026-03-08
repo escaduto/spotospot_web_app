@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useAuth } from "@/src/hooks/useAuth";
 import { createClient } from "@/src/supabase/client";
 import type { ItineraryDay } from "@/src/supabase/types";
@@ -8,6 +8,7 @@ import type {
   TripWithDayPlans,
   TripDayPlanSummary,
 } from "./user_home/TripCard";
+import TripCard from "./user_home/TripCard";
 import ItineraryCard from "./user_home/ItineraryCard";
 import PublicPlanCard from "./user_home/PublicPlanCard";
 import {
@@ -15,42 +16,59 @@ import {
   EmptyPublicTrips,
   EmptyTrips,
 } from "./user_home/EmptyTrips";
-import TripCard from "./user_home/TripCard";
+import PendingTripInvites from "./user_home/PendingTripInvites";
+import type { PendingInvite } from "./user_home/PendingTripInvites";
+import TripCalendarView from "./user_home/TripCalendarView";
 import Skeleton from "@mui/material/Skeleton";
-import Button from "@mui/material/Button";
-import Divider from "@mui/material/Divider";
 import Chip from "@mui/material/Chip";
 import AirplaneTicketIcon from "@mui/icons-material/AirplaneTicket";
 import PublicIcon from "@mui/icons-material/Public";
 import EditNoteIcon from "@mui/icons-material/EditNote";
+import AddIcon from "@mui/icons-material/Add";
+import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
+import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
+import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
+import FlightTakeoffIcon from "@mui/icons-material/FlightTakeoff";
+import Link from "next/link";
 
-const PAGE_SIZE = 6;
+const PAGE_SIZE = 12;
 const FETCH_LIMIT = 50;
 
-function CardGridSkeleton({ count = 3 }: { count?: number }) {
+// ── Skeletons ─────────────────────────────────────────────────────────────────
+
+function TripCardSkeleton() {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <Skeleton
+      variant="rounded"
+      height={220}
+      sx={{ borderRadius: 3, flexShrink: 0, width: "100%" }}
+    />
+  );
+}
+
+function PlanGridSkeleton({ count = 6 }: { count?: number }) {
+  return (
+    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
       {Array.from({ length: count }).map((_, i) => (
         <Skeleton
           key={i}
           variant="rounded"
-          height={200}
-          sx={{ borderRadius: 3 }}
+          sx={{ borderRadius: 2, aspectRatio: "1/1", width: "100%" }}
         />
       ))}
     </div>
   );
 }
 
-function CompactListSkeleton({ count = 4 }: { count?: number }) {
+function DraftListSkeleton({ count = 3 }: { count?: number }) {
   return (
     <div className="flex flex-col gap-2">
       {Array.from({ length: count }).map((_, i) => (
         <Skeleton
           key={i}
           variant="rounded"
-          height={68}
+          height={72}
           sx={{ borderRadius: 2 }}
         />
       ))}
@@ -58,37 +76,69 @@ function CompactListSkeleton({ count = 4 }: { count?: number }) {
   );
 }
 
+// ── Stat pill ─────────────────────────────────────────────────────────────────
+
+function StatPill({
+  icon,
+  label,
+  value,
+  color,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  color: string;
+}) {
+  return (
+    <div
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border"
+      style={{ borderColor: color + "40", background: color + "12", color }}
+    >
+      {icon}
+      <span className="font-bold">{value}</span>
+      <span className="font-medium opacity-70">{label}</span>
+    </div>
+  );
+}
+
+// ── Section header ────────────────────────────────────────────────────────────
+
 function SectionHeader({
   icon,
   title,
   count,
   chipColor,
+  action,
 }: {
   icon: React.ReactNode;
   title: string;
   count?: number;
   chipColor?: string;
+  action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-2 mb-4">
-      <span className="flex items-center">{icon}</span>
-      <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+    <div className="flex items-center gap-2 mb-3">
+      <span className="flex items-center text-gray-500">{icon}</span>
+      <h2 className="text-sm font-semibold text-gray-800">{title}</h2>
       {typeof count === "number" && count > 0 && (
         <Chip
           label={count}
           size="small"
           sx={{
-            height: 18,
-            fontSize: "0.65rem",
+            height: 17,
+            fontSize: "0.6rem",
             fontWeight: 700,
             bgcolor: chipColor ?? "#e5e7eb",
             color: "#374151",
           }}
         />
       )}
+      {action && <div className="ml-auto">{action}</div>}
     </div>
   );
 }
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function DashboardHome() {
   const { user, profile } = useAuth();
@@ -96,88 +146,86 @@ export default function DashboardHome() {
   const [trips, setTrips] = useState<TripWithDayPlans[]>([]);
   const [publicPlans, setPublicPlans] = useState<ItineraryDay[]>([]);
   const [privatePlans, setPrivatePlans] = useState<ItineraryDay[]>([]);
-
-  const [loadingTrips, setLoadingTrips] = useState(true);
-  const [loadingPublic, setLoadingPublic] = useState(true);
-  const [loadingPrivate, setLoadingPrivate] = useState(true);
+  const [pendingInvitations, setPendingInvitations] = useState<PendingInvite[]>(
+    [],
+  );
+  const [loading, setLoading] = useState(true);
 
   const [visiblePublic, setVisiblePublic] = useState(PAGE_SIZE);
-  const [visiblePrivate, setVisiblePrivate] = useState(PAGE_SIZE);
+
+  const [plansExpanded, setPlansExpanded] = useState(false);
 
   useEffect(() => {
     if (!user) return;
 
     const supabase = createClient();
 
-    // Active + planning trips with their day plans
-    supabase
-      .from("trips")
-      .select(
-        "id, title, destination, image_url, image_blurhash, start_date, end_date, visibility, status",
-      )
-      .eq("owner_id", user.id)
-      .in("status", ["active", "planning"])
-      .order("start_date", { ascending: true })
-      .then(
-        async ({ data: tripsData }: { data: TripWithDayPlans[] | null }) => {
-          if (!tripsData?.length) {
-            setLoadingTrips(false);
-            return;
-          }
-          const tripIds = tripsData.map((t: TripWithDayPlans) => t.id);
-          const { data: dayPlansData } = await supabase
-            .from("itinerary_days")
-            .select("id, title, date, city, trip_id")
-            .in("trip_id", tripIds)
-            .order("date", { ascending: true });
+    (async () => {
+      type DashboardTrip = TripWithDayPlans & {
+        owner_id: string;
+        collaborator_role: "viewer" | "editor" | "admin";
+        day_plans?: TripDayPlanSummary[];
+      };
+      type DashboardResult = {
+        trips: DashboardTrip[];
+        pending_invitations: unknown[];
+        public_plans: ItineraryDay[];
+        private_plans: ItineraryDay[];
+      };
 
-          const plansByTrip: Record<string, TripDayPlanSummary[]> = {};
-          (dayPlansData ?? []).forEach(
-            (dp: TripDayPlanSummary & { trip_id: string }) => {
-              const tid = dp.trip_id;
-              if (!plansByTrip[tid]) plansByTrip[tid] = [];
-              plansByTrip[tid].push(dp);
-            },
-          );
+      const { data, error } = await supabase
+        .rpc("get_dashboard", {
+          p_trip_statuses: ["active", "planning"],
+          p_plans_limit: FETCH_LIMIT,
+        })
+        .single();
 
-          setTrips(
-            tripsData.map((t: TripWithDayPlans) => ({
-              ...t,
-              day_plans: plansByTrip[t.id] ?? [],
-            })),
-          );
-          setLoadingTrips(false);
-        },
+      if (error) {
+        console.error("get_dashboard error:", error);
+        setLoading(false);
+        return;
+      }
+
+      const result = data as DashboardResult;
+
+      setTrips(
+        (result.trips ?? []).map((t) => ({
+          ...t,
+          collaborator_role: t.collaborator_role ?? "viewer",
+          day_plans: t.day_plans ?? [],
+        })),
       );
 
-    // Public day plans
-    supabase
-      .from("itinerary_days")
-      .select(
-        "id, visibility, title, city, image_url, image_blurhash, date, category_type",
-      )
-      .eq("created_by", user.id)
-      .eq("visibility", "public")
-      .order("updated_at", { ascending: false })
-      .limit(FETCH_LIMIT)
-      .then(({ data }: { data: ItineraryDay[] | null }) => {
-        if (data) setPublicPlans(data);
-        setLoadingPublic(false);
-      });
-
-    // Private draft day plans
-    supabase
-      .from("itinerary_days")
-      .select("id, visibility, title, city, image_url, image_blurhash, date")
-      .eq("created_by", user.id)
-      .eq("visibility", "private")
-      .order("updated_at", { ascending: false })
-      .limit(FETCH_LIMIT)
-      .then(({ data }: { data: ItineraryDay[] | null }) => {
-        if (data) setPrivatePlans(data);
-        setLoadingPrivate(false);
-      });
+      console.log("Dashboard data:", result);
+      setPublicPlans(result.public_plans ?? []);
+      setPrivatePlans(result.private_plans ?? []);
+      setPendingInvitations(result.pending_invitations as PendingInvite[]);
+      setLoading(false);
+    })();
   }, [user]);
+
+  // Upcoming trips = end_date >= today, sorted by start_date asc, first 4
+  const upcomingTrips = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    return trips
+      .filter((t) => t.end_date && t.end_date >= todayStr)
+      .sort((a, b) => (a.start_date ?? "").localeCompare(b.start_date ?? ""))
+      .slice(0, 4);
+  }, [trips]);
+
+  // Public plans grouped by city
+  const plansByCity = useMemo(() => {
+    const shown = plansExpanded
+      ? publicPlans
+      : publicPlans.slice(0, visiblePublic);
+    const groups = new Map<string, ItineraryDay[]>();
+    for (const plan of shown) {
+      const city = plan.city?.trim() || "Other";
+      if (!groups.has(city)) groups.set(city, []);
+      groups.get(city)!.push(plan);
+    }
+    return Array.from(groups.entries());
+  }, [publicPlans, visiblePublic, plansExpanded]);
 
   const greeting = () => {
     const h = new Date().getHours();
@@ -187,133 +235,244 @@ export default function DashboardHome() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pt-24 pb-20">
+    <div className="min-h-screen bg-gray-50 pt-20 pb-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        {/* Welcome header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">
-            {greeting()},{" "}
-            <span className="bg-linear-to-r from-teal-600 to-cyan-500 bg-clip-text text-transparent">
-              {profile?.full_name || user?.email?.split("@")[0] || "Traveler"}
-            </span>{" "}
-            ✈️
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Here&apos;s what&apos;s happening with your trips.
-          </p>
+        {/* ── Welcome header ── */}
+        <div className="mb-5 pt-4">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">
+                {greeting()},{" "}
+                <span className="bg-linear-to-r from-teal-600 to-cyan-500 bg-clip-text text-transparent">
+                  {profile?.full_name ||
+                    user?.email?.split("@")[0] ||
+                    "Traveler"}
+                </span>
+              </h1>
+              {/* Stats row */}
+              {!loading && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  <StatPill
+                    icon={<AirplaneTicketIcon sx={{ fontSize: 13 }} />}
+                    label="trips"
+                    value={trips.length}
+                    color="#0891b2"
+                  />
+                  <StatPill
+                    icon={<FlightTakeoffIcon sx={{ fontSize: 13 }} />}
+                    label="upcoming"
+                    value={upcomingTrips.length}
+                    color="#059669"
+                  />
+                  <StatPill
+                    icon={<PublicIcon sx={{ fontSize: 13 }} />}
+                    label="public plans"
+                    value={publicPlans.length}
+                    color="#7c3aed"
+                  />
+                  <StatPill
+                    icon={<EditNoteIcon sx={{ fontSize: 13 }} />}
+                    label="drafts"
+                    value={privatePlans.length}
+                    color="#d97706"
+                  />
+                </div>
+              )}
+            </div>
+            <a
+              href="/create_new_plan"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-teal-600 hover:bg-teal-500 text-white text-sm font-semibold shadow-sm transition whitespace-nowrap shrink-0"
+            >
+              <AddIcon sx={{ fontSize: 16 }} />
+              New Plan
+            </a>
+          </div>
         </div>
 
-        {/* ── Section 1: Active Trips ── */}
-        <SectionHeader
-          icon={<AirplaneTicketIcon sx={{ fontSize: 18, color: "#0891b2" }} />}
-          title="Your Trips"
-          count={trips.length}
-          chipColor="#cffafe"
-        />
+        {/* ── Pending Trip Invites ── */}
+        <PendingTripInvites initialInvites={pendingInvitations} />
 
-        {loadingTrips ? (
-          <CardGridSkeleton count={3} />
-        ) : trips.length === 0 ? (
-          <EmptyTrips />
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {trips.map((trip) => (
-              <TripCard key={trip.id} trip={trip} />
-            ))}
-          </div>
-        )}
-
-        {/* ── Section 2: Public Plans ── */}
-        <Divider sx={{ my: 4 }} />
-
-        <SectionHeader
-          icon={<PublicIcon sx={{ fontSize: 18, color: "#059669" }} />}
-          title="Public Day Plans"
-          count={publicPlans.length}
-          chipColor="#d1fae5"
-        />
-        <p className="text-xs text-gray-400 -mt-2 mb-4">
-          Published plans anyone can discover and add to their trip.
-        </p>
-
-        {loadingPublic ? (
-          <CompactListSkeleton count={4} />
-        ) : publicPlans.length === 0 ? (
-          <EmptyPublicTrips />
-        ) : (
-          <>
-            <div className="flex flex-col gap-2">
-              {publicPlans.slice(0, visiblePublic).map((plan) => (
-                <PublicPlanCard key={plan.id} plan={plan} />
-              ))}
-            </div>
-            {visiblePublic < publicPlans.length && (
-              <div className="mt-4 text-center">
-                <Button
-                  variant="outlined"
-                  size="small"
-                  endIcon={<KeyboardArrowDownIcon />}
-                  onClick={() => setVisiblePublic((v) => v + PAGE_SIZE)}
-                  sx={{
-                    borderRadius: 9999,
-                    textTransform: "none",
-                    borderColor: "#a7f3d0",
-                    color: "#059669",
-                    "&:hover": { borderColor: "#059669", bgcolor: "#f0fdf4" },
-                  }}
-                >
-                  Show more ({publicPlans.length - visiblePublic} remaining)
-                </Button>
+        {/* ── Upcoming Trips (featured horizontal scroll) ── */}
+        {(loading || upcomingTrips.length > 0) && (
+          <section className="mb-6">
+            <SectionHeader
+              icon={<FlightTakeoffIcon sx={{ fontSize: 15 }} />}
+              title="Upcoming"
+              count={upcomingTrips.length}
+              chipColor="#d1fae5"
+            />
+            {loading ? (
+              <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <TripCardSkeleton key={i} />
+                ))}
+              </div>
+            ) : (
+              <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {upcomingTrips.map((trip) => (
+                  <TripCard key={trip.id} trip={trip} />
+                ))}
               </div>
             )}
-          </>
+          </section>
         )}
 
-        {/* ── Section 3: Private Drafts ── */}
-        <Divider sx={{ my: 4 }} />
-
-        <SectionHeader
-          icon={<EditNoteIcon sx={{ fontSize: 18, color: "#d97706" }} />}
-          title="Draft Day Plans"
-          count={privatePlans.length}
-          chipColor="#fef3c7"
-        />
-        <p className="text-xs text-gray-400 -mt-2 mb-4">
-          Private drafts — only visible to you until published.
-        </p>
-
-        {loadingPrivate ? (
-          <CardGridSkeleton count={3} />
-        ) : privatePlans.length === 0 ? (
-          <EmptyPrivateTrips />
-        ) : (
-          <>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {privatePlans.slice(0, visiblePrivate).map((plan) => (
-                <ItineraryCard key={plan.id} trip={plan} />
-              ))}
-            </div>
-            {visiblePrivate < privatePlans.length && (
-              <div className="mt-4 text-center">
-                <Button
-                  variant="outlined"
-                  size="small"
-                  endIcon={<KeyboardArrowDownIcon />}
-                  onClick={() => setVisiblePrivate((v) => v + PAGE_SIZE)}
-                  sx={{
-                    borderRadius: 9999,
-                    textTransform: "none",
-                    borderColor: "#fde68a",
-                    color: "#d97706",
-                    "&:hover": { borderColor: "#d97706", bgcolor: "#fffbeb" },
-                  }}
+        {/* ── All Trips + Timeline ── */}
+        <section className="mb-6">
+          <SectionHeader
+            icon={<CalendarMonthIcon sx={{ fontSize: 15 }} />}
+            title="Timeline"
+            count={trips.length}
+            chipColor="#cffafe"
+            action={
+              trips.length > 0 && !loading ? (
+                <Link
+                  href="/trip"
+                  className="text-xs text-teal-600 hover:text-teal-700 font-medium"
                 >
-                  Show more ({privatePlans.length - visiblePrivate} remaining)
-                </Button>
-              </div>
-            )}
-          </>
-        )}
+                  All trips →
+                </Link>
+              ) : null
+            }
+          />
+
+          {loading ? (
+            <Skeleton variant="rounded" height={140} sx={{ borderRadius: 2 }} />
+          ) : trips.length === 0 ? (
+            <EmptyTrips />
+          ) : (
+            <TripCalendarView
+              trips={trips}
+              pendingInvites={pendingInvitations}
+            />
+          )}
+        </section>
+
+        {/* ── Two-column: Public Plans + Drafts ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          {/* ── Left: Public Day Plans (wider) ── */}
+          <section className="lg:col-span-3">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+              <SectionHeader
+                icon={<PublicIcon sx={{ fontSize: 15 }} />}
+                title="Public Day Plans"
+                count={publicPlans.length}
+                chipColor="#d1fae5"
+                action={
+                  publicPlans.length > 0 && !loading ? (
+                    <a
+                      href="/discover"
+                      className="text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                    >
+                      Discover more →
+                    </a>
+                  ) : null
+                }
+              />
+              <p className="text-xs text-gray-400 -mt-1 mb-3">
+                Published plans anyone can use.
+              </p>
+
+              {loading ? (
+                <PlanGridSkeleton count={6} />
+              ) : publicPlans.length === 0 ? (
+                <EmptyPublicTrips />
+              ) : (
+                <>
+                  {plansByCity.map(([city, plans]) => (
+                    <div key={city} className="mb-4">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                        📍 {city}
+                        <span className="font-normal normal-case text-gray-300">
+                          ({plans.length})
+                        </span>
+                      </p>
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                        {plans.map((plan) => (
+                          <PublicPlanCard key={plan.id} plan={plan} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {!plansExpanded && visiblePublic < publicPlans.length && (
+                    <button
+                      onClick={() => {
+                        if (visiblePublic + PAGE_SIZE >= publicPlans.length) {
+                          setPlansExpanded(true);
+                        } else {
+                          setVisiblePublic((v) => v + PAGE_SIZE);
+                        }
+                      }}
+                      className="w-full mt-2 py-1.5 text-xs text-emerald-600 hover:text-emerald-700 font-medium flex items-center justify-center gap-1 border border-dashed border-emerald-200 rounded-xl hover:border-emerald-400 transition"
+                    >
+                      <KeyboardArrowDownIcon sx={{ fontSize: 15 }} />
+                      Show more ({publicPlans.length - visiblePublic} remaining)
+                    </button>
+                  )}
+                  {plansExpanded && (
+                    <button
+                      onClick={() => {
+                        setPlansExpanded(false);
+                        setVisiblePublic(PAGE_SIZE);
+                      }}
+                      className="w-full mt-2 py-1.5 text-xs text-gray-400 hover:text-gray-600 font-medium flex items-center justify-center gap-1"
+                    >
+                      <KeyboardArrowUpIcon sx={{ fontSize: 15 }} />
+                      Show less
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </section>
+
+          {/* ── Right: Draft Day Plans (narrower) ── */}
+          <section className="lg:col-span-2">
+            <div className="bg-white rounded-2xl border border-amber-100 shadow-sm p-4">
+              <SectionHeader
+                icon={<EditNoteIcon sx={{ fontSize: 15 }} />}
+                title="My Drafts"
+                count={privatePlans.length}
+                chipColor="#fef3c7"
+                action={
+                  <a
+                    href="/create_new_plan"
+                    className="text-xs text-amber-600 hover:text-amber-700 font-medium flex items-center gap-0.5"
+                  >
+                    <AddIcon sx={{ fontSize: 13 }} />
+                    New
+                  </a>
+                }
+              />
+              <p className="text-xs text-gray-400 -mt-1 mb-3">
+                Private until you publish.
+              </p>
+
+              {loading ? (
+                <DraftListSkeleton count={3} />
+              ) : privatePlans.length === 0 ? (
+                <EmptyPrivateTrips />
+              ) : (
+                <>
+                  <div className="flex flex-col gap-2">
+                    {privatePlans.slice(0, 3).map((plan) => (
+                      <ItineraryCard key={plan.id} trip={plan} />
+                    ))}
+                  </div>
+                  {privatePlans.length > 3 && (
+                    <Link
+                      href="/day/drafts"
+                      className="w-full mt-2 py-1.5 text-xs text-amber-600 hover:text-amber-700 font-medium flex items-center justify-center gap-1 border border-dashed border-amber-200 rounded-xl hover:border-amber-400 transition"
+                    >
+                      View all {privatePlans.length} drafts
+                      <ArrowForwardIcon sx={{ fontSize: 13 }} />
+                    </Link>
+                  )}
+                </>
+              )}
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   );

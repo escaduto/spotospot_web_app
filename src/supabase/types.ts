@@ -11,6 +11,8 @@ export interface AvatarConfig {
   accessories: string;
   blush: string;
   skinTone: string;
+  hair: string;
+  hairColor: string;
 }
 
 export interface Profile {
@@ -77,10 +79,11 @@ export interface Trip {
   updated_at: string;
 }
 
-type CollaboratorRole = "owner" | "editor" | "viewer";
+type CollaboratorRole = "owner" | "admin" | "editor" | "viewer";
 
 export interface TripCollaborator {
   id: string;
+  email?: string | null; // For pending invites, the email of the invitee (not linked to profiles until accepted)
   trip_id: string;
   user_id: string;
   role: CollaboratorRole;
